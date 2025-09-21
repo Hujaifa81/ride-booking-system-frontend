@@ -110,6 +110,15 @@
   --sidebar-ring: oklch(0.541 0.281 293.009);
 }
 
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+  100% { transform: translateY(0px); }
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
 
 @layer base {
   * {
