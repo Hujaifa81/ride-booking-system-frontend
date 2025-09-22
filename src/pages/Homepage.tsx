@@ -1,6 +1,8 @@
 import Hero from "@/components/modules/home/Hero";
 import HowItWorks from "@/components/modules/home/HowItWorks";
 import Stats from "@/components/modules/home/Stats";
+import Services from "@/components/modules/home/Services";
+
 
 const Homepage = () => {
     return (
@@ -8,6 +10,7 @@ const Homepage = () => {
             <Hero/>
             <Stats/>
             <HowItWorks/>
+            <Services/>
         </div>
     );
 };

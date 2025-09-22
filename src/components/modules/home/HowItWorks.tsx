@@ -30,8 +30,8 @@ export default function HowItWorks() {
   if (inView) controls.start({ width: "100%" });
 
   return (
-    <section className="relative py-20 bg-gray-50 dark:bg-gray-900 overflow-hidden">
-  <div className="container mx-auto px-6">
+    <section className="relative py-20 bg-gray-50 dark:bg-gray-900 overflow-hidden px-12">
+  <div className="container mx-auto ">
     <h2 className="text-3xl md:text-4xl font-bold text-center mb-12 text-gray-900 dark:text-white">
       How It Works
     </h2>
