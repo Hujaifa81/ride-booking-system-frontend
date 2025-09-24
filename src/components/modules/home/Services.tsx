@@ -44,8 +44,8 @@ const services = [
 
 export default function Services() {
   return (
-    <section className="relative py-20 bg-gray-50 dark:bg-gray-900 overflow-hidden px-12">
-      <div className="container mx-auto ">
+    <section className="relative py-20 bg-gradient-to-br from-blue-50 via-white to-blue-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 overflow-hidden px-12">
+      <div className="container mx-auto">
         <h2 className="text-3xl md:text-4xl font-bold text-center text-gray-900 dark:text-white mb-12">
           Our Services
         </h2>
@@ -63,9 +63,8 @@ export default function Services() {
                 viewport={{ once: true }}
                 transition={{ duration: 0.8, delay: index * 0.1 }}
                 whileHover={{ scale: 1.03 }}
-                className={`relative flex flex-col md:flex-row items-center gap-6 ${
-                  isLeft ? "md:flex-row" : "md:flex-row-reverse"
-                }`}
+                className={`relative flex flex-col md:flex-row items-center gap-6 ${isLeft ? "md:flex-row" : "md:flex-row-reverse"
+                  }`}
               >
                 {/* Gradient Icon */}
                 <div
@@ -74,15 +73,17 @@ export default function Services() {
                   <Icon className="w-8 h-8 text-white" />
                 </div>
 
-                {/* Glassmorphism Card (dark mode supported) */}
-                <div className="flex-1 p-8 rounded-3xl 
-                  bg-gradient-to-br from-[#8E58FC] via-[#7A3FF5] to-[#5B2ECC] dark:bg-white/10 
-                  backdrop-blur-xl 
-                  border border-purple-400/30 
-                  shadow-xl relative overflow-hidden">
-                  
-                  {/* Shimmer overlay */}
-                  <div className="absolute inset-0 bg-[length:200%_200%] animate-shimmer opacity-20 rounded-3xl"></div>
+                {/* Card: Purple gradient in light, Glassmorphism in dark */}
+                <div
+                  className="flex-1 p-8 rounded-3xl 
+    bg-gradient-to-br from-[#8E58FC] via-[#7A3FF5] to-[#5B2ECC] 
+    dark:bg-none dark:bg-white/10 
+    backdrop-blur-xl 
+    border border-purple-400/30 
+    shadow-xl relative overflow-hidden"
+                >
+                  {/* Shimmer overlay (dark only) */}
+                  <div className="absolute inset-0 bg-[length:200%_200%] dark:animate-shimmer dark:opacity-20 rounded-3xl"></div>
 
                   <div className="relative z-10">
                     <h3 className="text-xl md:text-2xl font-semibold text-gray-900 dark:text-white mb-2">
@@ -91,6 +92,7 @@ export default function Services() {
                     <p className="text-gray-700 dark:text-gray-300">{service.description}</p>
                   </div>
                 </div>
+
               </motion.div>
             );
           })}
@@ -100,15 +102,9 @@ export default function Services() {
       {/* Shimmer animation */}
       <style>{`
         @keyframes shimmer {
-          0% {
-            background-position: 0% 50%;
-          }
-          50% {
-            background-position: 100% 50%;
-          }
-          100% {
-            background-position: 0% 50%;
-          }
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
         }
         .animate-shimmer {
           background: linear-gradient(

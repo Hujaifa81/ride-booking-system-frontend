@@ -8,7 +8,6 @@ import {
   NavigationMenuLink,
   NavigationMenuList,
   NavigationMenuTrigger,
-  navigationMenuTriggerStyle,
 } from "@/components/ui/navigation-menu";
 import {
   Sheet,
@@ -33,7 +32,7 @@ import {
 import { role } from "@/constants/role";
 import Logo from "@/assets/icons/Logo";
 import { ModeToggle } from "./ModeToggler";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 // Navigation links
 const navigationLinks = [
@@ -46,9 +45,21 @@ const navigationLinks = [
     label: "Ride Options",
     role: "PUBLIC",
     children: [
-      { href: "/rides/standard", label: "Standard Ride", description: "Affordable everyday trips" },
-      { href: "/rides/premium", label: "Premium Ride", description: "Luxury cars with comfort" },
-      { href: "/rides/shared", label: "Shared Ride", description: "Share a ride, split the fare" },
+      {
+        href: "/rides/standard",
+        label: "Standard Ride",
+        description: "Affordable everyday trips",
+      },
+      {
+        href: "/rides/premium",
+        label: "Premium Ride",
+        description: "Luxury cars with comfort",
+      },
+      {
+        href: "/rides/shared",
+        label: "Shared Ride",
+        description: "Share a ride, split the fare",
+      },
     ],
   },
   { href: "/dashboard/admin", label: "Dashboard", role: role.admin },
@@ -63,6 +74,15 @@ export default function Navbar() {
 
   const [desktopMenuOpen, setDesktopMenuOpen] = useState(false);
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      setIsScrolled(window.scrollY > 10);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
 
   const handleLogout = async () => {
     await logout(undefined);
@@ -70,13 +90,21 @@ export default function Navbar() {
   };
 
   return (
-    <section className="py-4 border-b px-12 bg-background/50 backdrop-blur-sm sticky top-0 z-50">
+    <section
+      className={`py-4 border-b px-6 md:px-12 sticky top-0 z-50 transition-all duration-300 ${
+        isScrolled
+          ? "bg-background/60 dark:bg-background/40 backdrop-blur-xl shadow-md"
+          : "bg-transparent"
+      }`}
+    >
       <div className="container">
         <nav className="flex items-center justify-between">
           {/* Logo */}
           <Link to="/" className="flex items-center gap-2">
             <Logo />
-            <span className="text-lg font-semibold tracking-tight">RideBook</span>
+            <span className="text-lg font-semibold tracking-tight">
+              RideBook
+            </span>
           </Link>
 
           {/* Desktop Menu */}
@@ -86,7 +114,10 @@ export default function Navbar() {
                 if (link.children) {
                   return (
                     <NavigationMenuItem key={index}>
-                      <NavigationMenuTrigger>{link.label}</NavigationMenuTrigger>
+                      <NavigationMenuTrigger className="bg-transparent hover:bg-transparent px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors border-0 shadow-none">
+                        {link.label}
+                      </NavigationMenuTrigger>
+
                       <NavigationMenuContent>
                         <div className="grid w-[600px] grid-cols-2 p-3">
                           {link.children.map((child, i) => (
@@ -96,8 +127,12 @@ export default function Navbar() {
                               className="rounded-md p-3 transition-colors hover:bg-muted/70"
                             >
                               <Link to={child.href}>
-                                <p className="mb-1 font-semibold">{child.label}</p>
-                                <p className="text-sm text-muted-foreground">{child.description}</p>
+                                <p className="mb-1 font-semibold">
+                                  {child.label}
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                  {child.description}
+                                </p>
                               </Link>
                             </NavigationMenuLink>
                           ))}
@@ -109,8 +144,13 @@ export default function Navbar() {
                 if (link.role === "PUBLIC" || link.role === data?.data?.role) {
                   return (
                     <NavigationMenuItem key={index}>
-                      <NavigationMenuLink asChild className={navigationMenuTriggerStyle()}>
-                        <Link to={link.href}>{link.label}</Link>
+                      <NavigationMenuLink asChild>
+                        <Link
+                          to={link.href}
+                          className="px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+                        >
+                          {link.label}
+                        </Link>
                       </NavigationMenuLink>
                     </NavigationMenuItem>
                   );
@@ -130,26 +170,43 @@ export default function Navbar() {
                 onMouseLeave={() => setDesktopMenuOpen(false)}
               >
                 <button
-                  onClick={() => setDesktopMenuOpen(prev => !prev)}
+                  onClick={() => setDesktopMenuOpen((prev) => !prev)}
                   className="flex items-center gap-1 rounded-md px-2 py-1 hover:bg-muted/70"
                 >
                   <Avatar className="h-8 w-8">
                     <AvatarImage
-                      src={data?.data?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${data?.data?.name}`}
+                      src={
+                        data?.data?.avatar ||
+                        `https://api.dicebear.com/7.x/initials/svg?seed=${data?.data?.name}`
+                      }
                       alt={data?.data?.name}
                     />
-                    <AvatarFallback>{data?.data?.name?.charAt(0) || "U"}</AvatarFallback>
+                    <AvatarFallback>
+                      {data?.data?.name?.charAt(0) || "U"}
+                    </AvatarFallback>
                   </Avatar>
                   <span className="text-sm font-medium">{data?.data?.name}</span>
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${desktopMenuOpen ? "rotate-180" : ""}`}
+                    className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                      desktopMenuOpen ? "rotate-180" : ""
+                    }`}
                   />
                 </button>
 
                 {desktopMenuOpen && (
                   <div className="absolute right-0 mt-2 w-48 rounded-md border bg-popover shadow-md flex flex-col">
-                    <Link to="/profile" className="block px-4 py-2 text-sm hover:bg-muted/70">Profile</Link>
-                    <Link to="/dashboard" className="block px-4 py-2 text-sm hover:bg-muted/70">Dashboard</Link>
+                    <Link
+                      to="/profile"
+                      className="block px-4 py-2 text-sm hover:bg-muted/70"
+                    >
+                      Profile
+                    </Link>
+                    <Link
+                      to="/dashboard"
+                      className="block px-4 py-2 text-sm hover:bg-muted/70"
+                    >
+                      Dashboard
+                    </Link>
                     <button
                       onClick={handleLogout}
                       className="block w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-muted/70"
@@ -161,8 +218,12 @@ export default function Navbar() {
               </div>
             ) : (
               <div className="flex gap-2">
-                <Button asChild><Link to="/login">Login</Link></Button>
-                <Button asChild variant="outline"><Link to="/register">Register</Link></Button>
+                <Button asChild>
+                  <Link to="/login">Login</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link to="/register">Register</Link>
+                </Button>
               </div>
             )}
           </div>
@@ -181,7 +242,9 @@ export default function Navbar() {
                   <SheetTitle>
                     <Link to="/" className="flex items-center gap-2">
                       <Logo />
-                      <span className="text-lg font-semibold tracking-tight">RideBook</span>
+                      <span className="text-lg font-semibold tracking-tight">
+                        RideBook
+                      </span>
                     </Link>
                   </SheetTitle>
                 </SheetHeader>
@@ -191,27 +254,45 @@ export default function Navbar() {
                   {data?.data?.email ? (
                     <div>
                       <button
-                        onClick={() => setMobileProfileOpen(prev => !prev)}
+                        onClick={() => setMobileProfileOpen((prev) => !prev)}
                         className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted/70 w-full justify-between"
                       >
                         <Avatar className="h-8 w-8">
                           <AvatarImage
-                            src={data?.data?.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${data?.data?.name}`}
+                            src={
+                              data?.data?.avatar ||
+                              `https://api.dicebear.com/7.x/initials/svg?seed=${data?.data?.name}`
+                            }
                             alt={data?.data?.name}
                           />
-                          <AvatarFallback>{data?.data?.name?.charAt(0) || "U"}</AvatarFallback>
+                          <AvatarFallback>
+                            {data?.data?.name?.charAt(0) || "U"}
+                          </AvatarFallback>
                         </Avatar>
-                        <span className="text-sm font-medium">{data?.data?.name}</span>
+                        <span className="text-sm font-medium">
+                          {data?.data?.name}
+                        </span>
                         <ChevronDown
-                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${mobileProfileOpen ? "rotate-180" : ""
-                            }`}
+                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
+                            mobileProfileOpen ? "rotate-180" : ""
+                          }`}
                         />
                       </button>
 
                       {mobileProfileOpen && (
                         <div className="mt-2 w-full rounded-md border bg-popover shadow-md flex flex-col">
-                          <Link to="/profile" className="block px-4 py-2 text-sm hover:bg-muted/70">Profile</Link>
-                          <Link to="/dashboard" className="block px-4 py-2 text-sm hover:bg-muted/70">Dashboard</Link>
+                          <Link
+                            to="/profile"
+                            className="block px-4 py-2 text-sm hover:bg-muted/70"
+                          >
+                            Profile
+                          </Link>
+                          <Link
+                            to="/dashboard"
+                            className="block px-4 py-2 text-sm hover:bg-muted/70"
+                          >
+                            Dashboard
+                          </Link>
                           <button
                             onClick={handleLogout}
                             className="block w-full text-left px-4 py-2 text-sm text-red-500 hover:bg-muted/70"
@@ -223,8 +304,12 @@ export default function Navbar() {
                     </div>
                   ) : (
                     <div className="flex gap-2 -mt-4">
-                      <Button asChild><Link to="/login">Login</Link></Button>
-                      <Button asChild variant="outline"><Link to="/register">Register</Link></Button>
+                      <Button asChild>
+                        <Link to="/login">Login</Link>
+                      </Button>
+                      <Button asChild variant="outline">
+                        <Link to="/register">Register</Link>
+                      </Button>
                     </div>
                   )}
                 </div>
@@ -234,8 +319,14 @@ export default function Navbar() {
                   <Accordion type="single" collapsible className="mb-2">
                     {navigationLinks.map((link, index) =>
                       link.children ? (
-                        <AccordionItem key={index} value={link.label} className="border-none">
-                          <AccordionTrigger className="text-base hover:no-underline">{link.label}</AccordionTrigger>
+                        <AccordionItem
+                          key={index}
+                          value={link.label}
+                          className="border-none"
+                        >
+                          <AccordionTrigger className="text-base hover:no-underline">
+                            {link.label}
+                          </AccordionTrigger>
                           <AccordionContent>
                             <div className="grid md:grid-cols-2">
                               {link.children.map((child, i) => (
@@ -244,15 +335,20 @@ export default function Navbar() {
                                   to={child.href}
                                   className="rounded-md p-3 transition-colors hover:bg-muted/70"
                                 >
-                                  <p className="mb-1 font-semibold">{child.label}</p>
-                                  <p className="text-sm text-muted-foreground">{child.description}</p>
+                                  <p className="mb-1 font-semibold">
+                                    {child.label}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground">
+                                    {child.description}
+                                  </p>
                                 </Link>
                               ))}
                             </div>
                           </AccordionContent>
                         </AccordionItem>
                       ) : (
-                        (link.role === "PUBLIC" || link.role === data?.data?.role) && (
+                        (link.role === "PUBLIC" ||
+                          link.role === data?.data?.role) && (
                           <Link
                             key={index}
                             to={link.href}
