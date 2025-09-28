@@ -219,10 +219,10 @@ export default function Navbar() {
             ) : (
               <div className="flex gap-2">
                 <Button asChild>
-                  <Link to="/signin">Signin</Link>
+                  <Link to="/sign-in">Signin</Link>
                 </Button>
                 <Button asChild variant="outline">
-                  <Link to="/signup">Signup</Link>
+                  <Link to="/sign-up">Signup</Link>
                 </Button>
               </div>
             )}
@@ -305,10 +305,10 @@ export default function Navbar() {
                   ) : (
                     <div className="flex gap-2 -mt-4">
                       <Button asChild>
-                        <Link to="/signin">Signin</Link>
+                        <Link to="/sign-in">Signin</Link>
                       </Button>
                       <Button asChild variant="outline">
-                        <Link to="/signup">Signup</Link>
+                        <Link to="/sign-up">Signup</Link>
                       </Button>
                     </div>
                   )}
