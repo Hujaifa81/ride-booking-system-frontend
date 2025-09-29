@@ -19,9 +19,11 @@ import {
 
 import { Mail, Lock, LogIn } from "lucide-react";
 import { z } from "zod";
-import { useForm } from "react-hook-form";
+import { useForm,type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Link } from "react-router";
+import { useLoginMutation } from "@/redux/features/auth/auth.api";
+import { toast } from "sonner";
 
 const formSchema = z.object({
   email: z.string().min(1, { message: "Email must be required" }).email({ message: "Invalid email address" }),
@@ -29,6 +31,8 @@ const formSchema = z.object({
 });
 
 export default function SigninForm({ className, ...props }: React.ComponentProps<"div">) {
+const [logIn]=useLoginMutation()
+
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -37,8 +41,40 @@ export default function SigninForm({ className, ...props }: React.ComponentProps
     },
   });
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    console.log("Submitted values:", values);
+  const onSubmit: SubmitHandler<z.infer<typeof formSchema>> = async (values) => {
+    try {
+      toast.loading("Logging in...", { id: "login" });
+      const res = await logIn(values).unwrap();
+      
+      if (res?.success) {
+        toast.success("Logged in successfully", { id: "login" });
+      }
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "data" in error &&
+        typeof (error).data === "object" &&
+        (error).data !== null &&
+        "message" in (error).data &&
+        (error).data.message === "User is not verified"
+      ) {
+        toast.error("Your account is not verified");
+      } else if (
+        typeof error === "object" &&
+        error !== null &&
+        "data" in error &&
+        typeof (error).data === "object" &&
+        (error).data !== null &&
+        "message" in (error).data &&
+        (error).data.message === "Password does not match"
+      ) {
+        toast.error("Invalid credentials");
+      }
+      else {
+        toast.error("Something went wrong. Please try again.");
+      }
+    }
   };
 
   return (
