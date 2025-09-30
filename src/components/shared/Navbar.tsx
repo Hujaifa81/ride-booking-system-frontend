@@ -185,7 +185,7 @@ export default function Navbar() {
                       {data?.data?.name?.charAt(0) || "U"}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="text-sm font-medium">{data?.data?.name}</span>
+                 
                   <ChevronDown
                     className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
                       desktopMenuOpen ? "rotate-180" : ""
@@ -194,7 +194,7 @@ export default function Navbar() {
                 </button>
 
                 {desktopMenuOpen && (
-                  <div className="absolute right-0 mt-2 w-48 rounded-md border bg-popover shadow-md flex flex-col">
+                  <div className="absolute -right-4  w-48 rounded-md border bg-popover shadow-md flex flex-col">
                     <Link
                       to="/profile"
                       className="block px-4 py-2 text-sm hover:bg-muted/70"
@@ -202,7 +202,7 @@ export default function Navbar() {
                       Profile
                     </Link>
                     <Link
-                      to="/dashboard"
+                      to={`/dashboard/${data?.data?.role.toLowerCase()}`}
                       className="block px-4 py-2 text-sm hover:bg-muted/70"
                     >
                       Dashboard

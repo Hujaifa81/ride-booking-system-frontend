@@ -9,3 +9,5 @@ export interface IResponse<T> {
   message: string;
   data: T;
 }
+
+export type TRole = "RIDER" | "DRIVER" | "ADMIN";

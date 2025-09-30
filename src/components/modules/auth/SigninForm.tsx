@@ -21,7 +21,7 @@ import { Mail, Lock, LogIn } from "lucide-react";
 import { z } from "zod";
 import { useForm,type SubmitHandler } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useLoginMutation } from "@/redux/features/auth/auth.api";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ const formSchema = z.object({
 
 export default function SigninForm({ className, ...props }: React.ComponentProps<"div">) {
 const [logIn]=useLoginMutation()
+const navigate=useNavigate()
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -48,6 +49,8 @@ const [logIn]=useLoginMutation()
       
       if (res?.success) {
         toast.success("Logged in successfully", { id: "login" });
+        navigate("/");
+        
       }
     } catch (error) {
       if (
