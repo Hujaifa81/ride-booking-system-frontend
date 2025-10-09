@@ -1,8 +1,9 @@
+import DashboardHome from "@/components/modules/rider/DashboardHome";
 
 const RiderDashboard = () => {
     return (
         <div>
-            <h1>This is dashboard</h1>
+            <DashboardHome/>
         </div>
     );
 };

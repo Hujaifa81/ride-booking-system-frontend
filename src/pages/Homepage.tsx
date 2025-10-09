@@ -7,6 +7,7 @@ import Promotions from "@/components/modules/home/Promotions";
 
 
 
+
 const Homepage = () => {
     return (
         <div className="bg-gradient-to-br from-blue-50 via-white to-blue-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
@@ -16,7 +17,7 @@ const Homepage = () => {
             <Services/>
             <Promotions/>
             <CallToAction/>
-           
+            
         </div>
     );
 };

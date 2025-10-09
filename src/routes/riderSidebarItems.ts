@@ -1,3 +1,5 @@
+import RideRequest from "@/components/modules/rider/RideRequest";
+import ActiveRide from "@/pages/RiderActiveRide";
 import RiderDashboard from "@/pages/RiderDashboard";
 import type { ISidebarItem } from "@/types";
 
@@ -13,14 +15,14 @@ export const riderSidebarItems: ISidebarItem[] = [
         component: RiderDashboard,
       },
       {
-        title: "New Booking",
-        url: "/rider/new-booking",
-        // component: NewBooking,
+        title: "Ride Request",
+        url: "/rider/ride-request",
+        component: RideRequest,
       },
       {
-        title: "Active Booking",
-        url: "/rider/active-booking",
-        // component: ActiveBooking,
+        title: "Active Ride",
+        url: "/rider/active-ride",
+        component: ActiveRide,
       },
     ],
   },
