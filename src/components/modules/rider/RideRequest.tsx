@@ -12,6 +12,7 @@ import "leaflet/dist/leaflet.css";
 import { MapPin, Navigation, Clock, DollarSign } from "lucide-react";
 import { toast } from "sonner";
 import { useRequestRideMutation } from "@/redux/features/ride/ride.api";
+import { useNavigate } from "react-router";
 
 // Fix default marker icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -54,11 +55,12 @@ interface RouteInfo {
 }
 
 export default function RideRequest() {
+  const navigate=useNavigate()
   const [createRide]=useRequestRideMutation()
 
   const [pickup, setPickup] = useState("");
   const [drop, setDrop] = useState("");
-  // Changed: [longitude, latitude] format
+  //  [longitude, latitude] format
   const [pickupCoords, setPickupCoords] = useState<[number, number] | null>(null);
   const [dropCoords, setDropCoords] = useState<[number, number] | null>(null);
   const [activeInput, setActiveInput] = useState<"pickup" | "drop" | null>(null);
@@ -67,6 +69,7 @@ export default function RideRequest() {
   const [loading, setLoading] = useState(false);
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
   
   // Separate refs for pickup and drop containers
   const pickupRef = useRef<HTMLDivElement>(null);
@@ -285,13 +288,14 @@ export default function RideRequest() {
       await createRide(rideData).unwrap()
       
       toast.success("Ride request submitted successfully!", { id: "ride-submit" });
-      
+      navigate('/rider/active-ride')
       // Reset form
       setPickup("");
       setDrop("");
       setPickupCoords(null);
       setDropCoords(null);
       setRouteInfo(null);
+      
       
     } catch (error) {
       console.error("Submission error:", error);
@@ -535,7 +539,7 @@ export default function RideRequest() {
           {/* Submit Button */}
           <Button 
             onClick={handleSubmit} 
-            className="w-full h-12 text-lg font-semibold"
+            className="w-full h-12 text-lg font-semibold cursor-pointer"
             disabled={!pickup || !drop || !routeInfo || isSubmitting}
           >
             {isSubmitting ? "Submitting..." : "Book Ride"}
