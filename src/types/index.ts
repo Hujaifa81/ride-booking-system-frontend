@@ -2,6 +2,11 @@ import type { ComponentType } from "react";
 
 
 export type { ISendOtp, IVerifyOtp, ILogin } from "./auth.type";
+export type {IFareResponse,IFareRequest} from "./ride.type";
+export type { User } from "./user.type";
+export type { Driver } from "./driver.type";
+export type { Vehicle } from "./vehicle.type";
+export type { Ride, RideStatus, StatusHistory } from "./ride.type";
 
 
 export interface IResponse<T> {

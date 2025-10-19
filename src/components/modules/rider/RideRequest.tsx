@@ -11,7 +11,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { MapPin, Navigation, Clock, DollarSign } from "lucide-react";
 import { toast } from "sonner";
-import { useRequestRideMutation } from "@/redux/features/ride/ride.api";
+import { useGetApproximateFareQuery, useRequestRideMutation } from "@/redux/features/ride/ride.api";
 import { useNavigate } from "react-router";
 
 // Fix default marker icon issue
@@ -55,8 +55,8 @@ interface RouteInfo {
 }
 
 export default function RideRequest() {
-  const navigate=useNavigate()
-  const [createRide]=useRequestRideMutation()
+  const navigate = useNavigate();
+  const [createRide] = useRequestRideMutation();
 
   const [pickup, setPickup] = useState("");
   const [drop, setDrop] = useState("");
@@ -70,7 +70,21 @@ export default function RideRequest() {
   const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  
+ const { data: fareData, isLoading: fareLoading, error: fareError } = useGetApproximateFareQuery(
+    {
+        
+        pickupLocation: pickupCoords ? `${pickupCoords[0]},${pickupCoords[1]}` : '',
+        dropoffLocation: dropCoords ? `${dropCoords[0]},${dropCoords[1]}` : ''
+    },
+    {
+        skip: !pickupCoords || !dropCoords || 
+                           !Array.isArray(pickupCoords) || !Array.isArray(dropCoords) ||
+                           pickupCoords.length !== 2 || dropCoords.length !== 2 ||
+                           typeof pickupCoords[0] !== 'number' || typeof pickupCoords[1] !== 'number' ||
+                           typeof dropCoords[0] !== 'number' || typeof dropCoords[1] !== 'number'
+    }
+);
+
   // Separate refs for pickup and drop containers
   const pickupRef = useRef<HTMLDivElement>(null);
   const dropRef = useRef<HTMLDivElement>(null);
@@ -91,12 +105,26 @@ export default function RideRequest() {
 
   // Calculate route when both locations are set
   useEffect(() => {
+    
     if (pickupCoords && dropCoords) {
       calculateRoute();
     } else {
       setRouteInfo(null);
     }
   }, [pickupCoords, dropCoords]);
+
+  // Update fare when API response comes
+  useEffect(() => {
+    console.log('Fare data received:', fareData);
+    if (fareData?.data?.approximateFare && routeInfo) {
+      setRouteInfo(prev => prev ? {
+        ...prev,
+        estimatedFare: fareData.data.approximateFare
+      } : null);
+    }
+  }, [fareData, routeInfo]);
+
+  
 
   // Close dropdown when clicking outside (but not on map)
   useEffect(() => {
@@ -139,12 +167,11 @@ export default function RideRequest() {
     }
   };
 
-  // Calculate route and fare estimation
+  // Calculate route using OSRM
   const calculateRoute = async () => {
     if (!pickupCoords || !dropCoords) return;
 
     try {
-      // Changed: Using [longitude, latitude] format for OSRM
       const response = await fetch(
         `https://router.project-osrm.org/route/v1/driving/${pickupCoords[0]},${pickupCoords[1]};${dropCoords[0]},${dropCoords[1]}?overview=full&geometries=geojson`
       );
@@ -155,18 +182,13 @@ export default function RideRequest() {
         const distance = route.distance / 1000; // km
         const duration = route.duration / 60; // minutes
         
-        // Simple fare calculation (adjust as needed)
-        const baseFare = 50; // Base fare in BDT
-        const perKmRate = 15; // Rate per km
-        const estimatedFare = baseFare + (distance * perKmRate);
-
-        // Changed: Keep coordinates in [longitude, latitude] format
+        // Keep coordinates in [longitude, latitude] format
         const coordinates = route.geometry.coordinates.map((coord: [number, number]) => [coord[0], coord[1]]);
 
         setRouteInfo({
           distance: Math.round(distance * 100) / 100,
           duration: Math.round(duration),
-          estimatedFare: Math.round(estimatedFare),
+          estimatedFare: 0, // Will be updated by fare query
           route: coordinates
         });
 
@@ -467,7 +489,15 @@ export default function RideRequest() {
                 <DollarSign className="w-4 h-4 text-orange-600" />
                 <div>
                   <p className="text-xs text-gray-600">Estimated Fare</p>
-                  <p className="font-semibold">৳{routeInfo.estimatedFare}</p>
+                  <p className="font-semibold">
+                    {fareLoading ? (
+                      "Calculating..."
+                    ) : fareError ? (
+                      "Error"
+                    ) : (
+                      `৳${routeInfo.estimatedFare}`
+                    )}
+                  </p>
                 </div>
               </div>
             </div>
