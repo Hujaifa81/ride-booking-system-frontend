@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { getSocket } from "@/lib/socket";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,51 +28,77 @@ import {
   Loader2
 } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { rideApi, useActiveRideQuery, useCancelRideMutation } from "@/redux/features/ride/ride.api";
+import { useCancelRideMutation } from "@/redux/features/ride/ride.api";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useNavigate } from "react-router";
-import { useDispatch } from "react-redux";
-import type { Ride, RideStatus } from "@/types";
+import type { RideStatus } from "@/types";
 import { getStatusColor, getStatusIcon, getStatusText } from "@/utils/status";
 import { RideMap } from "@/components/shared/RideMap";
+import { useActiveRide } from "@/hooks/useActiveRide";
 import { reverseGeocode } from "@/utils/reverseGeocode";
-
 
 
 export default function ActiveRide() {
   const navigate = useNavigate();
-  const dispatch = useDispatch<any>();
 
-  // Enhanced query options with proper cache management
-  const { data: rideResponse, isLoading, refetch, error } = useActiveRideQuery(undefined, {
-    refetchOnMountOrArgChange: 30,
-    refetchOnFocus: true,
-    refetchOnReconnect: true,
-    skip: false,
-  });
+  // Use the centralized hook for active ride management
+  const { ride, isLoading, error, refetch, isSocketConnected } = useActiveRide();
+
   const [cancelRide, { isLoading: cancelling }] = useCancelRideMutation();
 
-  const [liveRide, setLiveRide] = useState<Ride | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [driverSearchTime] = useState<number>(120);
   const [currentDriverAttempt] = useState<number>(1);
-  const socketRef = useRef<any>(null);
   const [redirecting, setRedirecting] = useState(false);
-  // Component mounted state to prevent actions after unmount
   const [isMounted, setIsMounted] = useState(true);
   const [hasHandledCancellation, setHasHandledCancellation] = useState(false);
   const [showCancellationUI, setShowCancellationUI] = useState<RideStatus | null>(null);
-  const [pickupAddress, setPickupAddress] = useState<string>('');
-  const [dropoffAddress, setDropoffAddress] = useState<string>('');
-  const [addressLoading, setAddressLoading] = useState<boolean>(false);
   const [showCompletedUI, setShowCompletedUI] = useState(false);
-
-  // State for cancellation reason
   const [cancellationReason, setCancellationReason] = useState<string>('');
 
-  // Extract ride data from response
-  const ride = rideResponse?.data;
+  // State for storing geocoded addresses
+  const [addresses, setAddresses] = useState<{
+    pickup: string | null;
+    dropoff: string | null;
+  }>({ pickup: null, dropoff: null });
+
+  // Fetch addresses when ride changes
+  useEffect(() => {
+    if (!ride) {
+      setAddresses({ pickup: null, dropoff: null });
+      return;
+    }
+
+    const fetchAddresses = async () => {
+      try {
+        // Fetch pickup address if not already provided
+        const pickupAddress = ride.pickupAddress || await reverseGeocode(
+          ride.pickupLocation.coordinates[1],
+          ride.pickupLocation.coordinates[0]
+        );
+
+        // Fetch dropoff address if not already provided
+        const dropoffAddress = ride.dropOffAddress || await reverseGeocode(
+          ride.dropOffLocation.coordinates[1],
+          ride.dropOffLocation.coordinates[0]
+        );
+
+        setAddresses({
+          pickup: pickupAddress,
+          dropoff: dropoffAddress
+        });
+      } catch (error) {
+        console.error('Error fetching addresses:', error);
+        // Fallback to coordinates
+        setAddresses({
+          pickup: ride.pickupAddress || `${ride.pickupLocation.coordinates[1].toFixed(4)}, ${ride.pickupLocation.coordinates[0].toFixed(4)}`,
+          dropoff: ride.dropOffAddress || `${ride.dropOffLocation.coordinates[1].toFixed(4)}, ${ride.dropOffLocation.coordinates[0].toFixed(4)}`
+        });
+      }
+    };
+
+    fetchAddresses();
+  }, [ride?._id]);
 
   // Track component mount state
   useEffect(() => {
@@ -83,13 +108,12 @@ export default function ActiveRide() {
     };
   }, []);
 
-  // Clear any cached cancelled rides on mount
+  // Clear states on mount
   useEffect(() => {
-    dispatch(rideApi.util.invalidateTags(['RIDE']));
     setHasHandledCancellation(false);
     setRedirecting(false);
-    setLiveRide(null);
     setShowCancellationUI(null);
+    setShowCompletedUI(false);
 
     const timer = setTimeout(() => {
       if (isMounted) {
@@ -98,40 +122,36 @@ export default function ActiveRide() {
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [dispatch, refetch, isMounted]);
+  }, [refetch, isMounted]);
 
-
-  // Only set ride data if it's valid and not cancelled
+  // Handle ride completion
   useEffect(() => {
-    if (ride && !ride.status.startsWith('CANCELLED') && isMounted) {
-      console.log('Setting initial ride data:', ride);
-      setLiveRide(ride);
-    } else if (ride && ride.status.startsWith('CANCELLED')) {
-      console.log('Received cancelled ride from API, not setting to local state');
-      setLiveRide(null);
+    if (!isMounted || redirecting || !ride) return;
+
+    if (ride.status === 'COMPLETED') {
+      console.log('Ride completed, showing completion UI');
+      setShowCompletedUI(true);
     }
-  }, [ride, isMounted]);
+  }, [ride, redirecting, isMounted]);
 
-  // cancellation redirect handling for all cancellation types
+  // Cancellation redirect handling for all cancellation types
   useEffect(() => {
-    const displayRide = liveRide || ride;
+    if (!isMounted || hasHandledCancellation || redirecting || !ride) return;
 
-    if (!isMounted || hasHandledCancellation || redirecting) return;
-
-    if (displayRide && displayRide.status.startsWith('CANCELLED')) {
-      console.log('Detected cancelled ride, handling redirect:', displayRide.status);
+    if (ride.status.startsWith('CANCELLED')) {
+      console.log('Detected cancelled ride, handling redirect:', ride.status);
       setHasHandledCancellation(true);
 
       // Show custom UI for all cancellation types
-      setShowCancellationUI(displayRide.status);
+      setShowCancellationUI(ride.status);
 
-      // DO NOT auto-redirect for rider-initiated cancellation — let user use the button
-      if (displayRide.status === 'CANCELLED_BY_RIDER') {
+      // DO NOT auto-redirect for rider-initiated cancellation
+      if (ride.status === 'CANCELLED_BY_RIDER') {
         return;
       }
 
       // Different delays based on cancellation type
-      const delay = displayRide.status === 'CANCELLED_FOR_PENDING_TIME_OVER' ? 5000 : 4000;
+      const delay = ride.status === 'CANCELLED_FOR_PENDING_TIME_OVER' ? 5000 : 4000;
 
       const cancellationTimer = setTimeout(() => {
         if (!isMounted) return;
@@ -139,7 +159,6 @@ export default function ActiveRide() {
         console.log('Starting redirect process...');
         setRedirecting(true);
         setShowCancellationUI(null);
-        setLiveRide(null);
 
         setTimeout(() => {
           if (isMounted) {
@@ -150,68 +169,15 @@ export default function ActiveRide() {
 
       return () => clearTimeout(cancellationTimer);
     }
-  }, [liveRide, ride, redirecting, hasHandledCancellation, navigate, isMounted]);
-
-  // Handle ride completion
-  useEffect(() => {
-    const displayRide = liveRide || ride;
-
-    if (!isMounted || redirecting) return;
-
-    if (displayRide && displayRide.status === 'COMPLETED') {
-      console.log('Ride completed, showing completion UI');
-      setShowCompletedUI(true);
-    }
-  }, [liveRide, ride, redirecting, isMounted]);
-
-  // Fetch addresses when ride data loads
-  useEffect(() => {
-    const fetchAddresses = async () => {
-      const displayRide = liveRide || ride;
-      if (!displayRide || addressLoading || !isMounted) return;
-
-      if (displayRide.pickupAddress && displayRide.dropOffAddress) {
-        setPickupAddress(displayRide.pickupAddress);
-        setDropoffAddress(displayRide.dropOffAddress);
-        return;
-      }
-
-      setAddressLoading(true);
-
-      try {
-        if (!pickupAddress && !displayRide.pickupAddress) {
-          const pickupAddr = await reverseGeocode(
-            displayRide.pickupLocation.coordinates[1],
-            displayRide.pickupLocation.coordinates[0]
-          );
-          if (isMounted) setPickupAddress(pickupAddr);
-        }
-
-        if (!dropoffAddress && !displayRide.dropOffAddress) {
-          const dropoffAddr = await reverseGeocode(
-            displayRide.dropOffLocation.coordinates[1],
-            displayRide.dropOffLocation.coordinates[0]
-          );
-          if (isMounted) setDropoffAddress(dropoffAddr);
-        }
-      } catch (error) {
-        console.error('Error fetching addresses:', error);
-        if (isMounted) toast.error('Failed to load addresses');
-      } finally {
-        if (isMounted) setAddressLoading(false);
-      }
-    };
-
-    fetchAddresses();
-  }, [liveRide, ride, pickupAddress, dropoffAddress, addressLoading, isMounted]);
+  }, [ride, redirecting, hasHandledCancellation, navigate, isMounted]);
 
   // Calculate time remaining for ride timeout
-  const calculateTimeRemaining = (rideData: Ride): number => {
-    if (!rideData.createdAt || !['REQUESTED', 'PENDING'].includes(rideData.status)) {
+  const calculateTimeRemaining = (): number => {
+    if (!ride?.createdAt || !['REQUESTED', 'PENDING'].includes(ride.status)) {
       return 0;
     }
 
-    const createdTime = new Date(rideData.createdAt).getTime();
+    const createdTime = new Date(ride.createdAt).getTime();
     const currentTime = new Date().getTime();
     const elapsedSeconds = Math.floor((currentTime - createdTime) / 1000);
     const timeoutSeconds = 10 * 60; // 10 minutes timeout
@@ -221,12 +187,11 @@ export default function ActiveRide() {
 
   // Update time remaining
   useEffect(() => {
-    const displayRide = liveRide || ride;
-    if (!displayRide || !isMounted) return;
+    if (!ride || !isMounted) return;
 
     const updateTime = () => {
       if (isMounted) {
-        setTimeRemaining(calculateTimeRemaining(displayRide));
+        setTimeRemaining(calculateTimeRemaining());
       }
     };
 
@@ -234,193 +199,7 @@ export default function ActiveRide() {
     const interval = setInterval(updateTime, 1000);
 
     return () => clearInterval(interval);
-  }, [liveRide, ride, isMounted]);
-
-  // Socket.IO connection with backend timeout handling
-  useEffect(() => {
-    if (!ride?._id || !isMounted) return;
-
-    if (ride.status.startsWith('CANCELLED')) {
-      console.log('Not setting up socket for cancelled ride');
-      return;
-    }
-
-    const socket = getSocket();
-    socketRef.current = socket;
-
-    // Connection status handlers
-    socket?.on('connect', () => {
-      if (!isMounted) return;
-      console.log('✅ Socket connected');
-      setConnectionStatus('connected');
-      socket.emit("join_ride_room", { rideId: ride._id });
-      toast.success('Connected to real-time updates');
-    });
-
-    socket?.on('disconnect', () => {
-      if (!isMounted) return;
-      console.log('❌ Socket disconnected');
-      setConnectionStatus('disconnected');
-      toast.warning('Disconnected from real-time updates');
-    });
-
-    socket?.on('connect_error', (error: any) => {
-      if (!isMounted) return;
-      console.error('⚠️ Socket connection error:', error);
-      setConnectionStatus('disconnected');
-      toast.error('Connection error. Please refresh the page.');
-    });
-
-    if (socket?.connected) {
-      setConnectionStatus('connected');
-      socket.emit("join_ride_room", { rideId: ride._id });
-    }
-
-    // Enhanced ride event listeners for backend cancellation handling
-    socket?.on("ride_update", (payload: Partial<Ride>) => {
-      if (!isMounted || hasHandledCancellation) return;
-
-      console.log('📡 Ride update received:', payload);
-
-      setLiveRide((prev) => {
-        if (!prev || !isMounted) return prev;
-        const updatedRide = { ...prev, ...payload };
-
-        if (updatedRide.status?.startsWith('CANCELLED')) {
-          console.log('Ride cancelled via socket update');
-          dispatch(rideApi.util.invalidateTags(['RIDE']));
-
-          // Don't show toast for any cancellation, let the UI handle messaging
-          if (updatedRide.status !== 'CANCELLED_FOR_PENDING_TIME_OVER') {
-            toast.error(`Ride ${getStatusText(updatedRide.status)}`);
-          }
-
-          return updatedRide;
-        } else if (updatedRide.status === 'COMPLETED') {
-          console.log('Ride completed via socket update');
-          dispatch(rideApi.util.invalidateTags(['RIDE']));
-          toast.success('Ride completed successfully!');
-          return updatedRide;
-        } else {
-          dispatch(rideApi.util.updateQueryData('activeRide', undefined, (draft) => {
-            if (draft?.data) {
-              Object.assign(draft.data, payload);
-            }
-          }));
-
-          toast.info('Ride information updated');
-          return updatedRide;
-        }
-      });
-    });
-
-    socket?.on("driver_location_update", ({ location }: {
-      location: [number, number];
-      timestamp: string
-    }) => {
-      if (!isMounted || hasHandledCancellation) return;
-
-      console.log('📍 Driver location update:', location);
-
-      setLiveRide((prev) => {
-        if (!prev || !prev.driver || !isMounted) return prev;
-        const updatedRide = {
-          ...prev,
-          driver: {
-            ...prev.driver,
-            location: {
-              type: "Point" as const,
-              coordinates: location
-            }
-          }
-        };
-
-        dispatch(rideApi.util.updateQueryData('activeRide', undefined, (draft) => {
-          if (draft?.data?.driver) {
-            draft.data.driver.location = {
-              type: "Point",
-              coordinates: location
-            };
-          }
-        }));
-
-        return updatedRide;
-      });
-    });
-
-    // Handle backend cancellation via status change
-    socket?.on("ride_status_change", ({
-      status,
-      updatedBy,
-      timestamp
-    }: {
-      status: RideStatus;
-      updatedBy: string;
-      timestamp: string
-    }) => {
-      if (!isMounted || hasHandledCancellation) return;
-
-      console.log('🔄 Status change:', status, 'by:', updatedBy);
-
-      setLiveRide((prev) => {
-        if (!prev || !isMounted) return prev;
-        const updatedRide = {
-          ...prev,
-          status,
-          statusHistory: [
-            ...prev.statusHistory,
-            { status, timestamp, by: updatedBy }
-          ]
-        };
-
-        if (status.startsWith('CANCELLED')) {
-          dispatch(rideApi.util.invalidateTags(['RIDE']));
-
-          // Don't show toast for cancellations, let the custom UI handle messaging
-          if (status !== 'CANCELLED_FOR_PENDING_TIME_OVER') {
-            toast.error(`Ride ${getStatusText(status)}`);
-          }
-        } else if (status === 'COMPLETED') {
-          dispatch(rideApi.util.invalidateTags(['RIDE']));
-          toast.success('Ride completed successfully!');
-        } else {
-          dispatch(rideApi.util.updateQueryData('activeRide', undefined, (draft) => {
-            if (draft?.data) {
-              draft.data.status = status;
-              draft.data.statusHistory = [
-                ...draft.data.statusHistory,
-                { status, timestamp, by: updatedBy }
-              ];
-            }
-          }));
-
-          toast.success(`Ride Status Updated to ${getStatusText(status)}`);
-        }
-
-        return updatedRide;
-      });
-    });
-
-    socket?.on('notification', (notification: any) => {
-      if (!isMounted) return;
-      console.log('🔔 Notification received:', notification);
-      toast.info(notification.message);
-    });
-
-    // Cleanup function
-    return () => {
-      console.log('🧹 Cleaning up socket listeners');
-      socket?.emit("leave_ride_room", { rideId: ride._id });
-      socket?.off("ride_update");
-      socket?.off("driver_location_update");
-      socket?.off("ride_status_change");
-      socket?.off("driver_assigned");
-      socket?.off("notification");
-      socket?.off('connect');
-      socket?.off('disconnect');
-      socket?.off('connect_error');
-    };
-  }, [ride?._id, dispatch, isMounted, hasHandledCancellation]);
+  }, [ride, isMounted]);
 
   const handleCancel = async () => {
     if (!ride?._id || !isMounted) return;
@@ -438,10 +217,8 @@ export default function ActiveRide() {
       toast.success("Ride cancelled successfully");
 
       setHasHandledCancellation(true);
-      setLiveRide(null);
-      dispatch(rideApi.util.invalidateTags(['RIDE']));
 
-      // SHOW rider-cancel UI and DO NOT auto-redirect
+      // Show rider-cancel UI and DO NOT auto-redirect
       setShowCancellationUI('CANCELLED_BY_RIDER');
 
     } catch (err: any) {
@@ -462,14 +239,13 @@ export default function ActiveRide() {
 
   // Map center calculation
   const center = useMemo((): [number, number] => {
-    const displayRide = liveRide || ride;
-    if (!displayRide) return [23.8103, 90.4125];
+    if (!ride) return [23.8103, 90.4125];
 
     return [
-      displayRide.pickupLocation.coordinates[1],
-      displayRide.pickupLocation.coordinates[0],
+      ride.pickupLocation.coordinates[1],
+      ride.pickupLocation.coordinates[0],
     ];
-  }, [liveRide, ride]);
+  }, [ride]);
 
   const formatTime = (seconds: number): string => {
     const minutes = Math.floor(seconds / 60);
@@ -565,12 +341,9 @@ export default function ActiveRide() {
       </div>
     );
   }
+
   // Show completed ride UI
-  if (showCompletedUI) {
-    const displayRide = liveRide || ride;
-
-    if (!displayRide) return null;
-
+  if (showCompletedUI && ride) {
     return (
       <div className="min-h-screen bg-gradient-to-b from-green-50 to-white p-4">
         <div className="max-w-2xl mx-auto">
@@ -607,15 +380,29 @@ export default function ActiveRide() {
                         <div className="flex-1 space-y-3">
                           <div>
                             <p className="text-xs text-gray-500 mb-1">Pickup</p>
-                            <p className="text-sm font-medium text-gray-800">
-                              {displayRide.pickupAddress || pickupAddress || 'Pickup Location'}
-                            </p>
+                            {addresses.pickup ? (
+                              <p className="text-sm font-medium text-gray-800">
+                                {addresses.pickup}
+                              </p>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+                                <span className="text-xs text-gray-400">Loading address...</span>
+                              </div>
+                            )}
                           </div>
                           <div>
                             <p className="text-xs text-gray-500 mb-1">Drop-off</p>
-                            <p className="text-sm font-medium text-gray-800">
-                              {displayRide.dropOffAddress || dropoffAddress || 'Drop-off Location'}
-                            </p>
+                            {addresses.dropoff ? (
+                              <p className="text-sm font-medium text-gray-800">
+                                {addresses.dropoff}
+                              </p>
+                            ) : (
+                              <div className="flex items-center gap-1">
+                                <Loader2 className="w-3 h-3 animate-spin text-gray-400" />
+                                <span className="text-xs text-gray-400">Loading address...</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -623,16 +410,16 @@ export default function ActiveRide() {
 
                     {/* Trip Details Grid */}
                     <div className="grid grid-cols-2 gap-3">
-                      {displayRide.distance && (
+                      {ride.distance && (
                         <div className="bg-white rounded-lg p-3 shadow-sm">
                           <p className="text-xs text-gray-500 mb-1">Distance</p>
-                          <p className="text-lg font-bold text-gray-800">{displayRide.distance} km</p>
+                          <p className="text-lg font-bold text-gray-800">{ride.distance} km</p>
                         </div>
                       )}
-                      {displayRide.estimatedDuration && (
+                      {ride.estimatedDuration && (
                         <div className="bg-white rounded-lg p-3 shadow-sm">
                           <p className="text-xs text-gray-500 mb-1">Duration</p>
-                          <p className="text-lg font-bold text-gray-800">{displayRide.estimatedDuration} min</p>
+                          <p className="text-lg font-bold text-gray-800">{ride.estimatedDuration} min</p>
                         </div>
                       )}
                     </div>
@@ -642,7 +429,7 @@ export default function ActiveRide() {
                       <div className="flex items-center justify-between">
                         <span className="text-gray-600 font-medium">Total Fare</span>
                         <span className="text-2xl font-bold text-green-600">
-                          ৳{displayRide.approxFare?.toLocaleString()}
+                          ৳{ride.approxFare?.toLocaleString()}
                         </span>
                       </div>
                     </div>
@@ -650,7 +437,7 @@ export default function ActiveRide() {
                 </div>
 
                 {/* Driver Info */}
-                {displayRide.driver && (
+                {ride.driver && (
                   <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
                     <h3 className="font-semibold text-gray-800 mb-3">Your Driver</h3>
                     <div className="flex items-center justify-center gap-3">
@@ -661,10 +448,10 @@ export default function ActiveRide() {
                       </Avatar>
                       <div className="text-left">
                         <p className="font-medium text-gray-800">Driver</p>
-                        <p className="text-sm text-gray-600">License: {displayRide.driver.licenseNumber}</p>
+                        <p className="text-sm text-gray-600">License: {ride.driver.licenseNumber}</p>
                         <div className="flex items-center gap-1 mt-1">
                           <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-medium">{displayRide.driver.rating.toFixed(1)}</span>
+                          <span className="text-sm font-medium">{ride.driver.rating.toFixed(1)}</span>
                         </div>
                       </div>
                     </div>
@@ -672,7 +459,7 @@ export default function ActiveRide() {
                 )}
 
                 {/* Rating Section */}
-                {!displayRide.rating && (
+                {!ride.rating && (
                   <div className="bg-blue-50 rounded-lg p-5 mb-6 border border-blue-200">
                     <h3 className="font-semibold text-blue-900 mb-3 flex items-center justify-center gap-2">
                       <Star className="w-5 h-5" />
@@ -687,7 +474,6 @@ export default function ActiveRide() {
                           key={star}
                           className="hover:scale-110 transition-transform"
                           onClick={() => {
-                            // TODO: Implement rating functionality
                             toast.info(`Rated ${star} stars - Feature coming soon!`);
                           }}
                         >
@@ -705,15 +491,15 @@ export default function ActiveRide() {
                   <div className="space-y-2 text-sm">
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">Ride ID:</span>
-                      <span className="font-mono text-xs text-gray-800">{displayRide._id}</span>
+                      <span className="font-mono text-xs text-gray-800">{ride._id}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">Started:</span>
-                      <span className="text-gray-800">{new Date(displayRide.createdAt).toLocaleString()}</span>
+                      <span className="text-gray-800">{new Date(ride.createdAt).toLocaleString()}</span>
                     </div>
                     <div className="flex items-center justify-between">
                       <span className="text-gray-600">Completed:</span>
-                      <span className="text-gray-800">{new Date(displayRide.updatedAt).toLocaleString()}</span>
+                      <span className="text-gray-800">{new Date(ride.updatedAt).toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -784,15 +570,10 @@ export default function ActiveRide() {
     );
   }
 
-  // UPDATED: Show cancellation UI for all cancellation types with reason support
-  if (showCancellationUI) {
-    const displayRide = liveRide || ride;
-
-    // FIXED: Extract cancellation reason from the ride object, not statusHistory
-    const cancelReasonFromRide = displayRide?.canceledReason || displayRide?.cancellationReason || '';
-
+  // Show cancellation UI for all cancellation types with reason support
+  if (showCancellationUI && ride) {
+    const cancelReasonFromRide = ride?.canceledReason || '';
     const finalCancelReason = cancellationReason || cancelReasonFromRide || '';
-
     const config = getCancellationUIConfig(showCancellationUI, finalCancelReason);
     const Icon = config.icon;
 
@@ -818,29 +599,27 @@ export default function ActiveRide() {
                 </p>
 
                 {/* Ride Details Summary */}
-                {displayRide && (
-                  <div className={`bg-white rounded-lg p-4 mb-6 border ${config.borderColor}`}>
-                    <h3 className="font-semibold text-gray-800 mb-3">Ride Details</h3>
-                    <div className="space-y-2 text-sm text-gray-600">
-                      <div className="flex items-center justify-between">
-                        <span>Ride ID:</span>
-                        <span className="font-mono text-xs">{displayRide._id}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Requested at:</span>
-                        <span>{new Date(displayRide.createdAt).toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Estimated Fare:</span>
-                        <span className="font-semibold">৳{displayRide.approxFare?.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>Status:</span>
-                        <span className="font-semibold text-red-600">{getStatusText(showCancellationUI)}</span>
-                      </div>
+                <div className={`bg-white rounded-lg p-4 mb-6 border ${config.borderColor}`}>
+                  <h3 className="font-semibold text-gray-800 mb-3">Ride Details</h3>
+                  <div className="space-y-2 text-sm text-gray-600">
+                    <div className="flex items-center justify-between">
+                      <span>Ride ID:</span>
+                      <span className="font-mono text-xs">{ride._id}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Requested at:</span>
+                      <span>{new Date(ride.createdAt).toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Estimated Fare:</span>
+                      <span className="font-semibold">৳{ride.approxFare?.toLocaleString()}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span>Status:</span>
+                      <span className="font-semibold text-red-600">{getStatusText(showCancellationUI)}</span>
                     </div>
                   </div>
-                )}
+                </div>
 
                 {/* Reasons */}
                 <div className={`bg-white rounded-lg p-4 mb-6 border ${config.borderColor}`}>
@@ -963,7 +742,7 @@ export default function ActiveRide() {
     );
   }
 
-  // error state handling
+  // Error state handling
   if (error) {
     const errorMessage = (error as any)?.data?.message || "Failed to load ride details";
     const isNoActiveRide = errorMessage.toLowerCase().includes('no active ride') ||
@@ -992,10 +771,7 @@ export default function ActiveRide() {
           <h2 className="text-xl font-semibold text-gray-800 mb-2">Error Loading Ride</h2>
           <p className="text-gray-600 mb-4">{errorMessage}</p>
           <div className="space-x-2">
-            <Button onClick={() => {
-              dispatch(rideApi.util.invalidateTags(['RIDE']));
-              refetch();
-            }}>Try Again</Button>
+            <Button onClick={() => refetch()}>Try Again</Button>
             <Button variant="outline" onClick={() => navigate("/rider/ride-request", { replace: true })}>
               Book New Ride
             </Button>
@@ -1005,8 +781,8 @@ export default function ActiveRide() {
     );
   }
 
-  // Better guard for no active ride
-  if (!ride && !liveRide) {
+  // Guard for no active ride
+  if (!ride) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -1021,10 +797,8 @@ export default function ActiveRide() {
     );
   }
 
-  const displayRide = liveRide || ride;
-
-  // Additional guard for cancelled rides that might slip through
-  if (!displayRide || displayRide.status.startsWith('CANCELLED')) {
+  // Additional guard for cancelled rides
+  if (ride.status.startsWith('CANCELLED')) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
@@ -1039,11 +813,13 @@ export default function ActiveRide() {
     );
   }
 
-  const isSearchingForDriver = displayRide.status === 'REQUESTED';
-  const isCancelled = displayRide.status.startsWith('CANCELLED');
+  const isSearchingForDriver = ride.status === 'REQUESTED';
+  const isCancelled = ride.status.startsWith('CANCELLED');
   const getDisplayStatus = () => {
-    return isSearchingForDriver ? 'searching' : displayRide.status;
+    return isSearchingForDriver ? 'searching' : ride.status;
   };
+
+  const connectionStatus = isSocketConnected ? 'connected' : 'disconnected';
 
   return (
     <TooltipProvider>
@@ -1053,14 +829,12 @@ export default function ActiveRide() {
           <div className="flex justify-between items-center">
             <div>
               <h1 className="text-2xl font-bold text-gray-800">Active Ride</h1>
-              <p className="text-gray-600">Ride ID: {displayRide._id}</p>
+              <p className="text-gray-600">Ride ID: {ride._id}</p>
             </div>
             <div className="flex items-center gap-3">
               {/* Connection Status */}
               <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' :
-                  connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
-                  }`}></div>
+                <div className={`w-2 h-2 rounded-full ${connectionStatus === 'connected' ? 'bg-green-500' : 'bg-red-500'}`}></div>
                 <span className="text-sm text-gray-600 capitalize">{connectionStatus}</span>
               </div>
 
@@ -1080,7 +854,7 @@ export default function ActiveRide() {
                   <Navigation className="w-5 h-5 text-blue-600" />
                   Ride Progress
                 </CardTitle>
-                {(displayRide.status === 'REQUESTED' || displayRide.status === 'PENDING') && !isCancelled && timeRemaining > 0 && (
+                {(ride.status === 'REQUESTED' || ride.status === 'PENDING') && !isCancelled && timeRemaining > 0 && (
                   <div className="text-sm text-gray-600">
                     Time remaining: <span className="font-mono font-bold text-red-600">
                       {formatTime(timeRemaining)}
@@ -1123,14 +897,14 @@ export default function ActiveRide() {
                   if (step.key === 'REQUESTED') {
                     isCompleted = true;
                   } else if (step.key === 'searching') {
-                    isActive = displayRide.status === 'REQUESTED' || displayRide.status === 'PENDING';
-                    isCompleted = !['REQUESTED', 'PENDING'].includes(displayRide.status) && !isCancelled;
+                    isActive = ride.status === 'REQUESTED' || ride.status === 'PENDING';
+                    isCompleted = !['REQUESTED', 'PENDING'].includes(ride.status) && !isCancelled;
                   } else {
                     const statusOrder = ['ACCEPTED', 'GOING_TO_PICK_UP', 'DRIVER_ARRIVED', 'IN_TRANSIT', 'REACHED_DESTINATION', 'COMPLETED'];
                     const stepIndex = statusOrder.indexOf(step.key as RideStatus);
-                    const currentIndex = statusOrder.indexOf(displayRide.status);
+                    const currentIndex = statusOrder.indexOf(ride.status);
 
-                    isActive = displayRide.status === step.key;
+                    isActive = ride.status === step.key;
                     isCompleted = currentIndex > stepIndex;
                   }
 
@@ -1159,7 +933,7 @@ export default function ActiveRide() {
           </Card>
 
           {/* Driver Information */}
-          {displayRide.driver && displayRide.status !== "REQUESTED" && (
+          {ride.driver && ride.status !== "REQUESTED" && (
             <Card className="bg-blue-50 border-blue-200">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -1178,23 +952,23 @@ export default function ActiveRide() {
 
                     <div className="space-y-1">
                       <h4 className="font-semibold text-lg">Driver</h4>
-                      <p className="text-sm text-gray-600">License: {displayRide.driver.licenseNumber}</p>
+                      <p className="text-sm text-gray-600">License: {ride.driver.licenseNumber}</p>
 
-                      {displayRide.vehicle && (
+                      {ride.vehicle && (
                         <p className="text-sm text-gray-600">
-                          {displayRide.vehicle.model}
+                          {ride.vehicle.model}
                         </p>
                       )}
 
-                      {displayRide.vehicle?.licensePlate && (
+                      {ride.vehicle?.licensePlate && (
                         <p className="text-sm font-mono bg-white px-2 py-1 rounded border">
-                          {displayRide.vehicle.licensePlate}
+                          {ride.vehicle.licensePlate}
                         </p>
                       )}
 
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm">{displayRide.driver.rating.toFixed(1)}</span>
+                        <span className="text-sm">{ride.driver.rating.toFixed(1)}</span>
                       </div>
                     </div>
                   </div>
@@ -1211,7 +985,7 @@ export default function ActiveRide() {
                   </div>
                 </div>
 
-                {(displayRide.status === 'GOING_TO_PICK_UP') && (
+                {ride.status === 'GOING_TO_PICK_UP' && (
                   <div className="bg-blue-100 p-3 rounded-lg mt-4">
                     <p className="text-sm text-blue-800">
                       <Clock className="w-4 h-4 inline mr-1" />
@@ -1220,7 +994,7 @@ export default function ActiveRide() {
                   </div>
                 )}
 
-                {displayRide.status === 'DRIVER_ARRIVED' && (
+                {ride.status === 'DRIVER_ARRIVED' && (
                   <div className="bg-green-100 p-3 rounded-lg mt-4">
                     <p className="text-sm text-green-800">
                       <MapPin className="w-4 h-4 inline mr-1" />
@@ -1238,7 +1012,7 @@ export default function ActiveRide() {
               <CardTitle className="flex items-center gap-2">
                 <MapPin className="w-5 h-5 text-blue-600" />
                 Live Map
-                {displayRide.driver?.location && displayRide.status !== 'REQUESTED' && displayRide.status !== 'PENDING' && (
+                {ride.driver?.location && ride.status !== 'REQUESTED' && ride.status !== 'PENDING' && (
                   <Badge variant="outline" className="ml-2 text-xs">
                     Driver location visible
                   </Badge>
@@ -1247,12 +1021,12 @@ export default function ActiveRide() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="border rounded-lg overflow-hidden">
-                <RideMap displayRide={displayRide} center={center} />
+                <RideMap displayRide={ride} center={center} />
               </div>
             </CardContent>
           </Card>
 
-          {/* Trip Details */}
+          {/* Trip Details - WITH REVERSE GEOCODING */}
           <Card>
             <CardHeader>
               <CardTitle>Trip Details</CardTitle>
@@ -1264,18 +1038,16 @@ export default function ActiveRide() {
                     <MapPin className="w-4 h-4" />
                     <span className="font-medium">Pickup</span>
                   </div>
-                  <div className="min-h-[2.5rem]">
-                    {addressLoading && !pickupAddress && !displayRide.pickupAddress ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                        <span className="text-sm text-gray-400">Loading address...</span>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        {displayRide.pickupAddress || pickupAddress || `${displayRide.pickupLocation.coordinates[1].toFixed(4)}, ${displayRide.pickupLocation.coordinates[0].toFixed(4)}`}
-                      </p>
-                    )}
-                  </div>
+                  {addresses.pickup ? (
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {addresses.pickup}
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      <span className="text-sm text-gray-400">Loading address...</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -1283,18 +1055,16 @@ export default function ActiveRide() {
                     <MapPin className="w-4 h-4" />
                     <span className="font-medium">Drop-off</span>
                   </div>
-                  <div className="min-h-[2.5rem]">
-                    {addressLoading && !dropoffAddress && !displayRide.dropOffAddress ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                        <span className="text-sm text-gray-400">Loading address...</span>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-gray-600 leading-relaxed">
-                        {displayRide.dropOffAddress || dropoffAddress || `${displayRide.dropOffLocation.coordinates[1].toFixed(4)}, ${displayRide.dropOffLocation.coordinates[0].toFixed(4)}`}
-                      </p>
-                    )}
-                  </div>
+                  {addresses.dropoff ? (
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      {addresses.dropoff}
+                    </p>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                      <span className="text-sm text-gray-400">Loading address...</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -1302,7 +1072,7 @@ export default function ActiveRide() {
                     <span className="font-medium">Estimated Fare</span>
                   </div>
                   <p className="text-lg font-semibold">
-                    ৳{displayRide.approxFare.toLocaleString()}
+                    ৳{ride.approxFare.toLocaleString()}
                   </p>
                 </div>
               </div>
@@ -1311,19 +1081,19 @@ export default function ActiveRide() {
 
               <div className="grid grid-cols-2 gap-4 text-sm text-gray-600">
                 <div>
-                  <span className="font-medium">Created:</span> {new Date(displayRide.createdAt).toLocaleString()}
+                  <span className="font-medium">Created:</span> {new Date(ride.createdAt).toLocaleString()}
                 </div>
                 <div>
-                  <span className="font-medium">Last Updated:</span> {new Date(displayRide.updatedAt).toLocaleString()}
+                  <span className="font-medium">Last Updated:</span> {new Date(ride.updatedAt).toLocaleString()}
                 </div>
-                {displayRide.distance && (
+                {ride.distance && (
                   <div>
-                    <span className="font-medium">Distance:</span> {displayRide.distance} km
+                    <span className="font-medium">Distance:</span> {ride.distance} km
                   </div>
                 )}
-                {displayRide.estimatedDuration && (
+                {ride.estimatedDuration && (
                   <div>
-                    <span className="font-medium">Duration:</span> {displayRide.estimatedDuration} min
+                    <span className="font-medium">Duration:</span> {ride.estimatedDuration} min
                   </div>
                 )}
               </div>
@@ -1341,7 +1111,7 @@ export default function ActiveRide() {
                         <AlertDialogTrigger asChild>
                           <Button
                             variant="destructive"
-                            disabled={cancelling || !(displayRide.status === "REQUESTED" || displayRide.status === "PENDING")}
+                            disabled={cancelling || !(ride.status === "REQUESTED" || ride.status === "PENDING")}
                             className="w-full"
                             size="lg"
                           >
@@ -1382,9 +1152,7 @@ export default function ActiveRide() {
                             </p>
                           </div>
                           <AlertDialogFooter>
-                            <AlertDialogCancel
-                              onClick={() => setCancellationReason('')}
-                            >
+                            <AlertDialogCancel onClick={() => setCancellationReason('')}>
                               Keep Ride
                             </AlertDialogCancel>
                             <AlertDialogAction
@@ -1406,17 +1174,14 @@ export default function ActiveRide() {
                       </AlertDialog>
                     </div>
                   </TooltipTrigger>
-                  {!(displayRide.status === "REQUESTED" || displayRide.status === "PENDING") && (
+                  {!(ride.status === "REQUESTED" || ride.status === "PENDING") && (
                     <TooltipContent>
                       <p>You cannot cancel ride after accepted</p>
                     </TooltipContent>
                   )}
                 </Tooltip>
 
-                <Button variant="outline" onClick={() => {
-                  dispatch(rideApi.util.invalidateTags(['RIDE']));
-                  refetch();
-                }}>
+                <Button variant="outline" onClick={() => refetch()}>
                   Refresh
                 </Button>
               </div>

@@ -1,4 +1,5 @@
 import RideRequest from "@/components/modules/rider/RideRequest";
+import BeADriver from "@/pages/BeADriver";
 import ActiveRide from "@/pages/RiderActiveRide";
 import RiderDashboard from "@/pages/RiderDashboard";
 import type { ISidebarItem } from "@/types";
@@ -50,9 +51,9 @@ export const riderSidebarItems: ISidebarItem[] = [
         // component: Notifications,
       },
       {
-        title: "Support",
-        url: "/rider/support",
-        // component: Support,
+        title: "Be A Driver",
+        url: "/rider/be-a-driver",
+        component: BeADriver
       },
       {
         title: "Settings",

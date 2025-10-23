@@ -9,6 +9,7 @@ export type { Vehicle } from "./vehicle.type";
 export type { Ride, RideStatus, StatusHistory } from "./ride.type";
 
 
+
 export interface IResponse<T> {
   statusCode: number;
   success: boolean;

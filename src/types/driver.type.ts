@@ -1,3 +1,5 @@
+import type { Vehicle } from "./vehicle.type";
+
 export interface Driver {
   _id: string;
   user: string;
@@ -14,4 +16,5 @@ export interface Driver {
   isSuspended: boolean;
   createdAt: string;
   updatedAt: string;
+  vehicles?: Vehicle[]
 }

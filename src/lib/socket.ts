@@ -10,6 +10,7 @@ export const getSocket = () => {
     socket = io(SOCKET_URL, {
       transports: ["websocket"],
       withCredentials: true,
+      
     });
 
     socket.on("connect", () => console.log("✅ Socket connected:", socket?.id));
