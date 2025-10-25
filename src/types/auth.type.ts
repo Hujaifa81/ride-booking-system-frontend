@@ -12,3 +12,7 @@ export interface ILogin {
   password: string;
 }
 
+export interface IResetPasswordRequest {
+  oldPassword: string;
+  newPassword: string;
+};

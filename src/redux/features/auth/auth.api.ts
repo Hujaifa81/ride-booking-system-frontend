@@ -1,5 +1,5 @@
 import { baseApi } from "@/redux/baseApi";
-import type { IResponse, ISendOtp, IVerifyOtp } from "@/types";
+import type { IResetPasswordRequest, IResponse, ISendOtp, IVerifyOtp, User } from "@/types";
 
 
 export const authApi = baseApi.injectEndpoints({
@@ -46,6 +46,15 @@ export const authApi = baseApi.injectEndpoints({
       }),
       providesTags: ["USER"],
     }),
+
+    resetPassword: builder.mutation<IResponse<User>, IResetPasswordRequest>({
+      query: (body) => ({
+        url: '/auth/reset-password',
+        method: 'PATCH',
+        data: body,
+      }),
+      invalidatesTags: ['USER'],
+    }),
   }),
 });
 
@@ -56,4 +65,5 @@ export const {
   useVerifyOtpMutation,
   useUserInfoQuery,
   useLogoutMutation,
+  useResetPasswordMutation,
 } = authApi;

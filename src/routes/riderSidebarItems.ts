@@ -1,8 +1,10 @@
 import RideRequest from "@/components/modules/rider/RideRequest";
 import BeADriver from "@/pages/BeADriver";
+import ProfilePage from "@/pages/ProfilePage";
 import ActiveRide from "@/pages/RiderActiveRide";
 import RiderDashboard from "@/pages/RiderDashboard";
 import type { ISidebarItem } from "@/types";
+
 
 
 
@@ -46,12 +48,12 @@ export const riderSidebarItems: ISidebarItem[] = [
     title: "Account",
     items: [
       {
-        title: "Notifications",
-        url: "/rider/notifications",
-        // component: Notifications,
+        title: "Profile",
+        url: "/rider/profile",
+        component: ProfilePage,
       },
       {
-        title: "Be A Driver",
+        title: "Become a Driver",
         url: "/rider/be-a-driver",
         component: BeADriver
       },

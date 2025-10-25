@@ -6,4 +6,19 @@ export interface User {
   role: string;
   isVerified: boolean;
   isActive: string;
+  createdAt: string;
+  imageUrl?: string;
+}
+
+export interface IUpdateUserRequest {
+  userId: string;
+  body: Partial<{
+    name: string;
+    phone: string;
+    role: string;
+    isActive: string;
+    isDeleted: boolean;
+    isVerified: boolean;
+    address: string;
+  }>;
 }

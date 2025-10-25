@@ -11,6 +11,11 @@ export interface IFareRequest {
     dropoffLocation: string;
 }
 
+export interface ITotalRidesCount {
+  totalRides: number;
+  cancelledRides: number;
+}
+
 export interface Ride {
   _id: string;
   pickupLocation: {
