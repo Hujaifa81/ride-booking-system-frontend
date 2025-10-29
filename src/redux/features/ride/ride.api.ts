@@ -1,5 +1,6 @@
 import { baseApi } from "@/redux/baseApi";
-import type { IFareRequest, IFareResponse, IResponse, ITotalRidesCount } from "@/types";
+import type { IFareRequest, IFareResponse, IResponse, ITotalRidesCount, Ride } from "@/types";
+
 
 export const rideApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
@@ -26,7 +27,7 @@ export const rideApi = baseApi.injectEndpoints({
                 method: "PATCH",
                 data: { canceledReason },
             }),
-            invalidatesTags: ["RIDE"],
+            invalidatesTags: ["RIDE", "RIDE_STATS"],
         }),
 
         getApproximateFare: builder.query<IResponse<IFareResponse>, IFareRequest>({
@@ -46,11 +47,25 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/total-rides/${userId}`,
                 method: 'GET',
             }),
-            providesTags: ['RIDE'],
-            
+            providesTags: ['RIDE_STATS'],
+
         }),
+
+        getRideHistory: builder.query<
+            IResponse<Ride[]>,
+            { userId: string; params?: Record<string, string | number | boolean> }
+        >({
+            query: ({ userId, params }) => ({
+                url: `/ride/history/${userId}`,
+                method: "GET",
+                params,
+            }),
+            providesTags: ["RIDE"],
+        }),
+
+
 
     })
 });
 
-export const { useRequestRideMutation, useActiveRideQuery, useCancelRideMutation, useGetApproximateFareQuery, useGetTotalRidesCountQuery } = rideApi;
+export const { useRequestRideMutation, useActiveRideQuery, useCancelRideMutation, useGetApproximateFareQuery, useGetTotalRidesCountQuery, useGetRideHistoryQuery } = rideApi;

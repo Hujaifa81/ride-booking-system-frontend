@@ -16,9 +16,17 @@ export const driverApi = baseApi.injectEndpoints({
             }),
             providesTags: ["DRIVER"],
         }),
+        UpdateDriverStatus: builder.mutation({
+            query: (statusData) => ({
+                url: "/driver/availability-status",
+                method: "PATCH",
+                data: statusData,
+            }),
+            invalidatesTags: ["DRIVER"],
+
+        }),
+
     }),
+});
 
-}
-);
-
-export const { useCreateDriverMutation,useGetDriverProfileQuery } = driverApi;
+    export const { useCreateDriverMutation, useGetDriverProfileQuery,useUpdateDriverStatusMutation } = driverApi;

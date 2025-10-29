@@ -6,7 +6,7 @@ export type {IFareResponse,IFareRequest,ITotalRidesCount} from "./ride.type";
 export type { User } from "./user.type";
 export type { Driver } from "./driver.type";
 export type { Vehicle } from "./vehicle.type";
-export type { Ride, RideStatus, StatusHistory } from "./ride.type";
+export type { Ride, RideStatus, StatusHistory,ILocation } from "./ride.type";
 
 
 
@@ -16,6 +16,7 @@ export interface IResponse<T> {
   success: boolean;
   message: string;
   data: T;
+  meta?: { page: number; limit: number; total: number }
 }
 
 export interface ISidebarItem {

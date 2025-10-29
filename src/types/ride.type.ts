@@ -64,3 +64,7 @@ export type RideStatus =
   | 'CANCELLED_BY_ADMIN'
   | 'CANCELLED_FOR_PENDING_TIME_OVER';
 
+export interface ILocation{
+  type?: "Point";
+  coordinates: [number, number];
+}

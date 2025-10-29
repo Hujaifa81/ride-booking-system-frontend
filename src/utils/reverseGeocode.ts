@@ -1,26 +1,50 @@
-// Reverse geocoding function
-  export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
-    try {
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1&accept-language=en`
+export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+  try {
+    // Prefer Mapbox if a token is provided
+    const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+    if (mapboxToken) {
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?limit=1&language=en&access_token=${encodeURIComponent(
+        mapboxToken
+      )}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Mapbox ${res.status}`);
+      const json = await res.json();
+      return (
+        json?.features?.[0]?.place_name ||
+        json?.features?.[0]?.text ||
+        "Unable to fetch address"
       );
-      const data = await response.json();
-
-      if (data && data.display_name) {
-        const address = data.address || {};
-        const parts = [];
-
-        if (address.house_number) parts.push(address.house_number);
-        if (address.road) parts.push(address.road);
-        if (address.neighbourhood || address.suburb) parts.push(address.neighbourhood || address.suburb);
-        if (address.city || address.town || address.village) parts.push(address.city || address.town || address.village);
-        if (address.state) parts.push(address.state);
-
-        return parts.length > 0 ? parts.join(', ') : data.display_name;
-      }
-      return 'Address not found';
-    } catch (error) {
-      console.error('Reverse geocoding error:', error);
-      return 'Unable to fetch address';
     }
-  };
+
+    // Fallback to OpenStreetMap Nominatim
+    const email = import.meta.env.VITE_NOMINATIM_EMAIL || ""; // optional but recommended
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+      lat
+    )}&lon=${encodeURIComponent(lng)}&zoom=16&addressdetails=1&accept-language=en${
+      email ? `&email=${encodeURIComponent(email)}` : ""
+    }`;
+
+    const res = await fetch(url, {
+      headers: {
+        // Browser cannot set User-Agent; Accept-Language is fine.
+        "Accept-Language": "en",
+      },
+    });
+    if (!res.ok) throw new Error(`Nominatim ${res.status}`);
+    const data = await res.json();
+
+    if (data?.display_name) {
+      const a = data.address || {};
+      const parts: string[] = [];
+      if (a.house_number) parts.push(a.house_number);
+      if (a.road) parts.push(a.road);
+      if (a.neighbourhood || a.suburb) parts.push(a.neighbourhood || a.suburb);
+      if (a.city || a.town || a.village) parts.push(a.city || a.town || a.village);
+      if (a.state) parts.push(a.state);
+      return parts.length > 0 ? parts.join(", ") : data.display_name;
+    }
+    return "Address not found";
+  } catch {
+    return "Unable to fetch address";
+  }
+};

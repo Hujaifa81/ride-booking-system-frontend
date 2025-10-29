@@ -1,6 +1,7 @@
 import RideRequest from "@/components/modules/rider/RideRequest";
 import BeADriver from "@/pages/BeADriver";
 import ProfilePage from "@/pages/ProfilePage";
+import RideHistoryPage from "@/pages/RideHistoryPage";
 import ActiveRide from "@/pages/RiderActiveRide";
 import RiderDashboard from "@/pages/RiderDashboard";
 import type { ISidebarItem } from "@/types";
@@ -33,15 +34,11 @@ export const riderSidebarItems: ISidebarItem[] = [
     title: "History",
     items: [
       {
-        title: "Bookings",
-        url: "/rider/bookings",
-        // component: Bookings,
+        title: "Ride History",
+        url: "/rider/ride-history",
+        component: RideHistoryPage,
       },
-      {
-        title: "Payments",
-        url: "/rider/payments",
-        // component: Payments,
-      },
+      
     ],
   },
   {
@@ -57,11 +54,7 @@ export const riderSidebarItems: ISidebarItem[] = [
         url: "/rider/be-a-driver",
         component: BeADriver
       },
-      {
-        title: "Settings",
-        url: "/rider/settings",
-        // component: Settings,
-      },
+      
     ],
   },
 ];
