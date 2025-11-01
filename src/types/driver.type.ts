@@ -19,4 +19,9 @@ export interface Driver {
   vehicles?: Vehicle[]
 }
 
+export interface UpdateDriverLocation{
+  coordinates: [number, number]; // [lng, lat]
+};
+
+
 

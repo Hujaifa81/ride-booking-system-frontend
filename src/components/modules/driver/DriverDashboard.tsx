@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState } from "react";
 import {
   Car,
@@ -18,24 +19,61 @@ import { Badge } from "@/components/ui/badge";
 import { useGetDriverProfileQuery, useUpdateDriverStatusMutation } from "@/redux/features/driver/driver.api";
 import { DriverStatus } from "@/constants/status";
 import { toast } from "sonner";
+import DriverLocationModal from "./DriverLocationModal";
+import {
+  useAcceptRideMutation,
+  useGetIncomingRidesQuery,
+  useRejectRideMutation,
+  useUpdateRideStatusAfterAcceptedMutation,
+} from "@/redux/features/ride/ride.api";
+import type { Ride } from "@/types";
+import { useDriverIncomingRequestSocket } from "@/hooks/useDriverIncomingRequestSocket";
 
-type RideRequest = {
-  id: string;
-  pickup: string;
-  dropoff: string;
-  distanceKm: number;
-  etaMin: number;
-  fare: number;
-};
+// Map imports
+import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
-type ActiveRide = {
-  id: string;
-  pickup: string;
-  dropoff: string;
-  stage: "en_route_pickup" | "with_passenger";
-  distanceKm: number;
-  etaMin: number;
-  fare: number;
+// Fix Leaflet default marker icons for bundlers
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
+  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+});
+
+const driverIcon = new L.Icon({
+  iconUrl: "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png",
+  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+// Helpers
+const toLeaflet = (lngLat?: [number, number] | null): [number, number] | undefined =>
+  lngLat ? [lngLat[1], lngLat[0]] : undefined; // [lng, lat] -> [lat, lng]
+const dhakaCenter: [number, number] = [23.8103, 90.4125];
+const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+
+const getActiveRideBadge = (status: string) => {
+  switch (status) {
+    case "GOING_TO_PICK_UP":
+      return "Going to pickup";
+    case "DRIVER_ARRIVED":
+      return "Driver arrived";
+    case "IN_TRANSIT":
+      return "In transit";
+    case "REACHED_DESTINATION":
+      return "Reached destination";
+    case "COMPLETED":
+      return "Completed";
+    case "CANCELLED_BY_DRIVER":
+      return "Cancelled";
+    default:
+      return status;
+  }
 };
 
 const DriverDashboard = () => {
@@ -46,45 +84,29 @@ const DriverDashboard = () => {
     refetch: refetchProfile,
   } = useGetDriverProfileQuery(undefined);
 
+  const {
+    data: incomingRidesData,
+    isLoading: isIncomingRidesLoading,
+    isError: isIncomingRidesError,
+    refetch: refetchIncomingRides,
+  } = useGetIncomingRidesQuery(undefined);
+
   const [updateStatus, { isLoading: isUpdating }] = useUpdateDriverStatusMutation();
+  const [acceptRide, { isLoading: isAccepting }] = useAcceptRideMutation();
+  const [rejectRide, { isLoading: isRejecting }] = useRejectRideMutation();
+  const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] = useUpdateRideStatusAfterAcceptedMutation();
 
   const status = (driverProfile as any)?.data?.status;
   const isAvailable = status === DriverStatus.AVAILABLE;
   const isOnTrip = status === DriverStatus.ON_TRIP;
   const isOffline = status === DriverStatus.OFFLINE || !status;
 
-  const [activeRide, setActiveRide] = useState<ActiveRide | null>(null);
-  const [incoming, setIncoming] = useState<RideRequest[]>([
-    {
-      id: "RQ-28421",
-      pickup: "221B Baker Street, Marylebone",
-      dropoff: "Heathrow Airport T3",
-      distanceKm: 24.2,
-      etaMin: 6,
-      fare: 42.5,
-    },
-    {
-      id: "RQ-28422",
-      pickup: "10 Downing Street",
-      dropoff: "King's Cross Station",
-      distanceKm: 5.7,
-      etaMin: 4,
-      fare: 12.2,
-    },
-    {
-      id: "RQ-28423",
-      pickup: "Canary Wharf",
-      dropoff: "Greenwich Park",
-      distanceKm: 8.9,
-      etaMin: 8,
-      fare: 18.4,
-    },
-  ]);
+  const [activeRide, setActiveRide] = useState<Ride | null>(null);
 
   const [metrics, setMetrics] = useState({
     earningsToday: 126.75,
     tripsToday: 9,
-    onlineMins: 312, // 5h12m
+    onlineMins: 312,
     rating: 4.92,
     acceptanceRate: 96,
     weeklyEarnings: [85, 120, 140, 90, 160, 200, 126],
@@ -93,75 +115,74 @@ const DriverDashboard = () => {
   const onlineH = Math.floor(metrics.onlineMins / 60);
   const onlineM = metrics.onlineMins % 60;
 
+  const [showLocModal, setShowLocModal] = useState(false);
+
+  const profileCoords = useMemo<[number, number] | null>(() => {
+    const raw = (driverProfile as any)?.data?.location?.coordinates;
+    if (Array.isArray(raw) && raw.length === 2 && raw.every((n: any) => typeof n === "number")) {
+      return [raw[0], raw[1]]; // [lng, lat]
+    }
+    return null;
+  }, [driverProfile]);
+
+  useDriverIncomingRequestSocket({
+    enabled: isAvailable,
+    onNewRide: async (_ride: Ride) => {
+      toast.success("New ride request received!");
+      await refetchIncomingRides();
+    },
+  });
+
   const toggleAvailability = async () => {
     if (isOnTrip) return;
     const next = isAvailable ? DriverStatus.OFFLINE : DriverStatus.AVAILABLE;
     try {
       await updateStatus({ status: next }).unwrap();
       refetchProfile();
-    } catch(err) {
-      toast.error(err?.data?.message);
+    } catch (err: any) {
+      toast.error(err?.data?.message || "Failed to update status");
     }
   };
 
-  const acceptRequest = async (req: RideRequest) => {
+  const acceptRequest = async (ride: Ride) => {
     try {
-      await updateStatus({ status: DriverStatus.ON_TRIP }).unwrap();
-      setActiveRide({
-        id: req.id,
-        pickup: req.pickup,
-        dropoff: req.dropoff,
-        stage: "en_route_pickup",
-        distanceKm: req.distanceKm,
-        etaMin: req.etaMin,
-        fare: req.fare,
-      });
-      setIncoming((prev) => prev.filter((r) => r.id !== req.id));
-      refetchProfile();
-    } catch {
-      alert("Failed to accept ride");
+      const res = await acceptRide(ride._id).unwrap();
+      const accepted = (res as any)?.data || ride;
+      setActiveRide({ ...accepted });
+      await Promise.all([refetchIncomingRides(), refetchProfile()]);
+    } catch (e: any) {
+      toast.error(e?.data?.message || "Failed to accept ride");
     }
   };
 
-  const finishRide = async (fare: number) => {
+  const declineRequest = async (rideId: string) => {
     try {
-      await updateStatus({ status: DriverStatus.AVAILABLE }).unwrap();
-      setActiveRide(null);
-      setMetrics((m) => ({
-        ...m,
-        tripsToday: m.tripsToday + 1,
-        earningsToday: m.earningsToday + (fare || 0),
-      }));
-      refetchProfile();
-    } catch {
-      alert("Failed to complete ride");
+      await rejectRide(rideId).unwrap();
+      setMetrics((m) => ({ ...m, acceptanceRate: Math.max(70, m.acceptanceRate - 1) }));
+      await refetchIncomingRides();
+    } catch (e: any) {
+      toast.error(e?.data?.message || "Failed to reject ride");
     }
   };
 
-  const declineRequest = (id: string) => {
-    setIncoming((prev) => prev.filter((r) => r.id !== id));
-    setMetrics((m) => ({ ...m, acceptanceRate: Math.max(70, m.acceptanceRate - 1) }));
+  const handleStatusChange = async (ride: Ride, nextStatus: string) => {
+    try {
+      const res = await statusUpdateAfterAccepted({ rideId: ride._id, status: nextStatus }).unwrap();
+      setActiveRide(res?.data || null);
+      toast.success(`Status updated to ${getActiveRideBadge(nextStatus)}`);
+      await refetchProfile();
+    } catch (e: any) {
+      toast.error(e?.data?.message || "Failed to update ride status");
+    }
   };
+
+  
 
   const progressBar = (value: number, color = "bg-emerald-500") => (
     <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
       <div className={`h-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
   );
-
-  const sparkline = useMemo(() => {
-    const data = metrics.weeklyEarnings;
-    const w = 200;
-    const h = 40;
-    const max = Math.max(...data, 1);
-    const stepX = w / (data.length - 1 || 1);
-    const pts = data.map((v, i) => {
-      const x = i * stepX;
-      const y = h - (v / max) * (h - 4) - 2;
-      return `${x},${y}`;
-    });
-    return { w, h, pts: pts.join(" ") };
-  }, [metrics.weeklyEarnings]);
 
   const statusBadge = () => {
     const cls =
@@ -180,6 +201,11 @@ const DriverDashboard = () => {
       </Badge>
     );
   };
+
+  const leafletCenter = toLeaflet(profileCoords) || dhakaCenter;
+  const mapKey = `map-${profileCoords ? `${profileCoords[1]}-${profileCoords[0]}` : "default"}`;
+
+  const incomingRides: Ride[] = (incomingRidesData as any)?.data || [];
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -205,17 +231,19 @@ const DriverDashboard = () => {
               ? "On Trip"
               : "Go Online"}
           </Button>
+          <Button variant="outline" onClick={() => setShowLocModal(true)}>
+            <MapPin className="w-4 h-4 mr-2" />
+            Set Location
+          </Button>
           <Button variant="outline" onClick={() => refetchProfile()} disabled={isProfileLoading}>
             Refresh
           </Button>
         </div>
       </div>
 
-      {/* Profile load/error states (light-touch) */}
+      {/* Profile load/error states */}
       {isProfileError && (
-        <div className="mb-4 text-sm text-rose-600">
-          Failed to load profile. Try Refresh.
-        </div>
+        <div className="mb-4 text-sm text-rose-600">Failed to load profile. Try Refresh.</div>
       )}
 
       {/* KPI cards */}
@@ -235,7 +263,6 @@ const DriverDashboard = () => {
             <div className="text-xs text-slate-500 mt-1">Target: $200</div>
           </CardContent>
         </Card>
-
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
@@ -251,7 +278,6 @@ const DriverDashboard = () => {
             <div className="text-xs text-slate-500 mt-1">Goal: 8h</div>
           </CardContent>
         </Card>
-
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
@@ -265,7 +291,6 @@ const DriverDashboard = () => {
             <div className="text-xs text-slate-500 mt-1">Target: 20 trips</div>
           </CardContent>
         </Card>
-
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-slate-600 flex items-center gap-2">
@@ -285,6 +310,46 @@ const DriverDashboard = () => {
         </Card>
       </div>
 
+      {/* Location map */}
+      <Card className="border-0 shadow-sm mb-6">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm">Your Location</CardTitle>
+          <CardDescription>Current driver position</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="h-[320px] rounded-md overflow-hidden border">
+            <MapContainer
+              key={mapKey}
+              center={leafletCenter}
+              zoom={13}
+              style={{ height: "100%", width: "100%" }}
+            >
+              <TileLayer
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {profileCoords && (
+                <Marker position={toLeaflet(profileCoords)!} icon={driverIcon}>
+                  <Popup>
+                    <div className="text-sm">
+                      <div className="font-medium">You are here</div>
+                      <div className="text-xs text-slate-600">
+                        Lat {profileCoords[1].toFixed(6)}, Lng {profileCoords[0].toFixed(6)}
+                      </div>
+                    </div>
+                  </Popup>
+                </Marker>
+              )}
+            </MapContainer>
+            {!profileCoords && (
+              <div className="absolute inset-x-0 mt-2 ml-2 px-2 py-1 rounded bg-amber-50 border text-amber-700 w-max text-xs">
+                Location not set. Click “Set Location”.
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Main grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         {/* Active Ride / Availability */}
@@ -295,7 +360,7 @@ const DriverDashboard = () => {
                 <CardTitle>Active Ride</CardTitle>
                 <CardDescription>
                   {activeRide
-                    ? `Ride ${activeRide.id}`
+                    ? `Ride ${activeRide._id}`
                     : isAvailable
                     ? "You are available for new requests"
                     : "Go online to receive requests"}
@@ -303,7 +368,7 @@ const DriverDashboard = () => {
               </div>
               {activeRide && (
                 <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700">
-                  {activeRide.stage === "en_route_pickup" ? "Going to pickup" : "In transit"}
+                  {getActiveRideBadge(activeRide.status)}
                 </Badge>
               )}
             </div>
@@ -316,25 +381,41 @@ const DriverDashboard = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-slate-800">{activeRide.pickup}</span>
+                        <span className="font-medium text-slate-800">
+                          {activeRide.pickupAddress ||
+                            (activeRide.pickupLocation?.coordinates
+                              ? formatCoords(activeRide.pickupLocation.coordinates)
+                              : "Pickup")}
+                        </span>
                       </div>
                       <div className="h-4 w-0.5 bg-slate-300 ml-2 my-2 rounded-full" />
                       <div className="flex items-center gap-2">
                         <MapPin className="w-4 h-4 text-rose-600" />
-                        <span className="font-medium text-slate-800">{activeRide.dropoff}</span>
+                        <span className="font-medium text-slate-800">
+                          {activeRide.dropOffAddress ||
+                            (activeRide.dropOffLocation?.coordinates
+                              ? formatCoords(activeRide.dropOffLocation.coordinates)
+                              : "Dropoff")}
+                        </span>
                       </div>
                       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-slate-600">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-4 h-4 text-slate-500" />
-                          ETA {activeRide.etaMin}m
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <TrendingUp className="w-4 h-4 text-slate-500" />
-                          {activeRide.distanceKm.toFixed(1)} km
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <DollarSign className="w-4 h-4 text-slate-500" />${activeRide.fare.toFixed(2)}
-                        </span>
+                        {typeof activeRide.estimatedDuration === "number" && (
+                          <span className="inline-flex items-center gap-1">
+                            <Clock className="w-4 h-4 text-slate-500" />
+                            ETA {activeRide.estimatedDuration}m
+                          </span>
+                        )}
+                        {typeof activeRide.distance === "number" && (
+                          <span className="inline-flex items-center gap-1">
+                            <TrendingUp className="w-4 h-4 text-slate-500" />
+                            {activeRide.distance.toFixed(1)} km
+                          </span>
+                        )}
+                        {typeof activeRide.approxFare === "number" && (
+                          <span className="inline-flex items-center gap-1">
+                            <DollarSign className="w-4 h-4 text-slate-500" />${activeRide.approxFare.toFixed(2)}
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex flex-col gap-2 w-full sm:w-auto">
@@ -347,33 +428,61 @@ const DriverDashboard = () => {
                         Start Navigation
                       </Button>
                       <div className="flex gap-2">
-                        {activeRide.stage === "en_route_pickup" ? (
+                        {activeRide.status === "ACCEPTED" && (
                           <Button
                             className="flex-1"
-                            onClick={() =>
-                              setActiveRide((r) =>
-                                r ? { ...r, stage: "with_passenger", etaMin: Math.max(3, r.etaMin - 2) } : r
-                              )
-                            }
+                            onClick={() => handleStatusChange(activeRide, "GOING_TO_PICK_UP")}
+                            disabled={isStatusChanging}
                           >
                             <CheckCircle2 className="w-4 h-4 mr-2" />
-                            Picked Up
+                            Going to Pickup
                           </Button>
-                        ) : (
+                        )}
+                        {activeRide.status === "GOING_TO_PICK_UP" && (
                           <Button
                             className="flex-1"
-                            onClick={() => finishRide(activeRide.fare)}
-                            disabled={isUpdating}
+                            onClick={() => handleStatusChange(activeRide, "DRIVER_ARRIVED")}
+                            disabled={isStatusChanging}
                           >
                             <CheckCircle2 className="w-4 h-4 mr-2" />
-                            Complete
+                            Arrived
+                          </Button>
+                        )}
+                        {activeRide.status === "DRIVER_ARRIVED" && (
+                          <Button
+                            className="flex-1"
+                            onClick={() => handleStatusChange(activeRide, "IN_TRANSIT")}
+                            disabled={isStatusChanging}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Start Ride
+                          </Button>
+                        )}
+                        {activeRide.status === "IN_TRANSIT" && (
+                          <Button
+                            className="flex-1"
+                            onClick={() => handleStatusChange(activeRide, "REACHED_DESTINATION")}
+                            disabled={isStatusChanging}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Reached Destination
+                          </Button>
+                        )}
+                        {activeRide.status === "REACHED_DESTINATION" && (
+                          <Button
+                            className="flex-1"
+                            onClick={() => handleStatusChange(activeRide, "COMPLETED")}
+                            disabled={isStatusChanging}
+                          >
+                            <CheckCircle2 className="w-4 h-4 mr-2" />
+                            Completed
                           </Button>
                         )}
                         <Button
                           variant="outline"
                           className="flex-1"
-                          onClick={() => finishRide(0)}
-                          disabled={isUpdating}
+                          onClick={() => handleStatusChange(activeRide, "CANCELLED_BY_DRIVER")}
+                          disabled={isStatusChanging}
                         >
                           <XCircle className="w-4 h-4 mr-2" />
                           Cancel
@@ -392,7 +501,7 @@ const DriverDashboard = () => {
                 <div className="text-slate-600">
                   {isAvailable ? "No active rides. Waiting for the next request..." : "You are offline."}
                 </div>
-                {isAvailable && incoming.length > 0 && (
+                {isAvailable && incomingRides.length > 0 && (
                   <div className="text-xs text-slate-500 mt-1">You’ll be notified when a new request arrives.</div>
                 )}
                 {isOffline && (
@@ -404,71 +513,6 @@ const DriverDashboard = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Earnings trend */}
-        <Card className="border-0 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle>Earnings Trend</CardTitle>
-            <CardDescription>This week</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <div className="text-2xl font-semibold text-slate-900">
-                  ${metrics.weeklyEarnings.reduce((a, b) => a + b, 0).toFixed(2)}
-                </div>
-                <div className="text-xs text-slate-500">Week total</div>
-              </div>
-              <Badge variant="outline" className="bg-emerald-50 border-emerald-200 text-emerald-700">
-                +8.4% vs last week
-              </Badge>
-            </div>
-            <div className="mt-4 rounded-lg border bg-gradient-to-b from-slate-50 to-white p-3">
-              <svg width={sparkline.w} height={sparkline.h}>
-                <polyline
-                  fill="none"
-                  stroke="rgb(16, 185, 129)"
-                  strokeWidth="2"
-                  points={sparkline.pts}
-                  strokeLinejoin="round"
-                  strokeLinecap="round"
-                />
-              </svg>
-              <div className="mt-2 grid grid-cols-7 text-[11px] text-slate-500">
-                {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d) => (
-                  <div key={d} className="text-center">
-                    {d}
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div className="mt-4 flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setMetrics((m) => ({ ...m, weeklyEarnings: m.weeklyEarnings.map((v) => v + 10) }))}
-              >
-                Boost
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setMetrics((m) => ({
-                    ...m,
-                    weeklyEarnings: [85, 120, 140, 90, 160, 200, 126],
-                  }))
-                }
-              >
-                Reset
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Bottom grid */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
         {/* Incoming Requests */}
         <Card className="xl:col-span-2 border-0 shadow-sm">
           <CardHeader className="pb-3">
@@ -476,54 +520,85 @@ const DriverDashboard = () => {
             <CardDescription>Accept or decline new ride requests</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {incoming.length === 0 ? (
+            {isIncomingRidesLoading ? (
+              <div className="text-sm text-slate-600 border rounded-lg p-6 text-center">Loading incoming requests...</div>
+            ) : isIncomingRidesError ? (
+              <div className="text-sm text-rose-600 border rounded-lg p-6 text-center">Failed to load incoming requests.</div>
+            ) : incomingRides.length === 0 ? (
               <div className="text-sm text-slate-600 border rounded-lg p-6 text-center">No pending requests</div>
             ) : (
-              incoming.map((req) => (
-                <div
-                  key={req.id}
-                  className="rounded-lg border p-3 sm:p-4 bg-white hover:bg-slate-50/60 transition"
-                >
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-                    <div className="flex-1">
-                      <div className="text-sm text-slate-500">{req.id}</div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <MapPin className="w-4 h-4 text-blue-600" />
-                        <span className="font-medium text-slate-800">{req.pickup}</span>
+              incomingRides.map((ride) => {
+                const pickup =
+                  ride.pickupAddress ||
+                  (ride.pickupLocation?.coordinates ? formatCoords(ride.pickupLocation.coordinates) : "Pickup");
+                const dropoff =
+                  ride.dropOffAddress ||
+                  (ride.dropOffLocation?.coordinates ? formatCoords(ride.dropOffLocation.coordinates) : "Dropoff");
+                const etaMin = typeof ride.estimatedDuration === "number" ? ride.estimatedDuration : undefined;
+                const distanceKm = typeof ride.distance === "number" ? ride.distance : undefined;
+                const fare = typeof ride.approxFare === "number" ? ride.approxFare : undefined;
+
+                return (
+                  <div
+                    key={ride._id}
+                    className="rounded-lg border p-3 sm:p-4 bg-white hover:bg-slate-50/60 transition"
+                  >
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+                      <div className="flex-1">
+                        <div className="text-sm text-slate-500">{ride._id}</div>
+                        <div className="mt-1 flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-blue-600" />
+                          <span className="font-medium text-slate-800">{pickup}</span>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1">
+                          <MapPin className="w-4 h-4 text-rose-600" />
+                          <span className="font-medium text-slate-800">{dropoff}</span>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
+                          {typeof etaMin === "number" && (
+                            <span className="inline-flex items-center gap-1">
+                              <Clock className="w-4 h-4 text-slate-500" />
+                              ETA {etaMin}m
+                            </span>
+                          )}
+                          {typeof distanceKm === "number" && (
+                            <span className="inline-flex items-center gap-1">
+                              <TrendingUp className="w-4 h-4 text-slate-500" />
+                              {distanceKm.toFixed(1)} km
+                            </span>
+                          )}
+                          {typeof fare === "number" && (
+                            <span className="inline-flex items-center gap-1">
+                              <DollarSign className="w-4 h-4 text-slate-500" />${fare.toFixed(2)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 mt-1">
-                        <MapPin className="w-4 h-4 text-rose-600" />
-                        <span className="font-medium text-slate-800">{req.dropoff}</span>
+                      <div className="flex gap-2 w-full sm:w-auto">
+                        <Button
+                          className="flex-1 sm:flex-none"
+                          onClick={() => acceptRequest(ride)}
+                          disabled={isOnTrip || isAccepting}
+                          title={isOnTrip ? "You are on a trip" : undefined}
+                        >
+                          {isAccepting ? "Accepting..." : "Accept"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="flex-1 sm:flex-none"
+                          onClick={() => declineRequest(ride._id)}
+                          disabled={isRejecting}
+                        >
+                          {isRejecting ? "Rejecting..." : "Decline"}
+                        </Button>
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-slate-600">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-4 h-4 text-slate-500" />
-                          ETA {req.etaMin}m
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <TrendingUp className="w-4 h-4 text-slate-500" />
-                          {req.distanceKm.toFixed(1)} km
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <DollarSign className="w-4 h-4 text-slate-500" />${req.fare.toFixed(2)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2 w-full sm:w-auto">
-                      <Button className="flex-1 sm:flex-none" onClick={() => acceptRequest(req)} disabled={isUpdating || isOnTrip}>
-                        Accept
-                      </Button>
-                      <Button variant="outline" className="flex-1 sm:flex-none" onClick={() => declineRequest(req.id)} disabled={isUpdating}>
-                        Decline
-                      </Button>
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </CardContent>
         </Card>
-
         {/* Recent Activity */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
@@ -553,6 +628,17 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
       </div>
+
+      {/* Location modal */}
+      <DriverLocationModal
+        open={showLocModal}
+        onOpenChange={setShowLocModal}
+        initialCoords={profileCoords}
+        onSaved={async () => {
+          await refetchProfile();
+          setShowLocModal(false);
+        }}
+      />
     </div>
   );
 };

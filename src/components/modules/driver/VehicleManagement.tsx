@@ -28,7 +28,7 @@ const VehicleManagement = () => {
 
   // Normalize API payload to Vehicle[]
   const vehiclesFromApi: Vehicle[] = useMemo(() => {
-    const env: any = vehiclesRes;
+    const env= vehiclesRes;
     if (Array.isArray(env)) return env as Vehicle[];
     if (Array.isArray(env?.data)) return env.data as Vehicle[];
     if (Array.isArray(env?.data?.data)) return env.data.data as Vehicle[];
@@ -365,7 +365,7 @@ const VehicleManagement = () => {
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 mt-3">Owner</div>
-                <div className="text-sm text-slate-700 break-all">{(selected as any).user?._id || "—"}</div>
+                <div className="text-sm text-slate-700 break-all">{(selected).user?._id || "—"}</div>
               </div>
             </div>
             <div className="p-4 border-t flex items-center justify-end gap-2">

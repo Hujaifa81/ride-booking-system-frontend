@@ -1,4 +1,5 @@
 import { baseApi } from "@/redux/baseApi";
+import type { Driver, IResponse, UpdateDriverLocation } from "@/types";
 
 export const driverApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
@@ -25,8 +26,18 @@ export const driverApi = baseApi.injectEndpoints({
             invalidatesTags: ["DRIVER"],
 
         }),
+        updateDriverLocation: builder.mutation<IResponse<Driver>, UpdateDriverLocation>({
+            query: ({ coordinates }) => ({
+                url: "/driver/location",
+                method: "PATCH",
+                data: {
+                    location: { type: "Point", coordinates },
+                },
+            }),
+            invalidatesTags: ["DRIVER"],
+        }),
 
     }),
 });
 
-    export const { useCreateDriverMutation, useGetDriverProfileQuery,useUpdateDriverStatusMutation } = driverApi;
+export const { useCreateDriverMutation, useGetDriverProfileQuery, useUpdateDriverStatusMutation, useUpdateDriverLocationMutation } = driverApi;

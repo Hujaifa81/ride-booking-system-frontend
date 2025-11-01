@@ -30,7 +30,7 @@ export interface Ride {
   user: User;
   driver?: Driver;
   vehicle?: Vehicle;
-  status: RideStatus;
+  status: RideStatus | ActiveRideStatus;
   statusHistory: StatusHistory[];
   rejectedDrivers: string[];
   rating?: number | null;
@@ -63,6 +63,17 @@ export type RideStatus =
   | 'CANCELLED_BY_DRIVER'
   | 'CANCELLED_BY_ADMIN'
   | 'CANCELLED_FOR_PENDING_TIME_OVER';
+
+  export type ActiveRideStatus =
+  | 'ACCEPTED'
+  | 'GOING_TO_PICK_UP'
+  | 'DRIVER_ARRIVED'
+  | 'IN_TRANSIT'
+  | 'REACHED_DESTINATION'
+  | 'COMPLETED'
+  | 'CANCELLED_BY_RIDER'
+  | 'CANCELLED_BY_DRIVER'
+  | 'CANCELLED_BY_ADMIN'
 
 export interface ILocation{
   type?: "Point";

@@ -63,9 +63,39 @@ export const rideApi = baseApi.injectEndpoints({
             providesTags: ["RIDE"],
         }),
 
+        getIncomingRides: builder.query<IResponse<Ride[]>, void>({
+            query: () => ({
+                url: `/ride/incoming-requests`,
+                method: "GET",
+            }),
+            providesTags: ["RIDE"],
+        }),
 
+        acceptRide: builder.mutation<IResponse<Ride>, string>({
+            query: (rideId: string) => ({
+                url: `/ride/accept/${rideId}`,
+                method: "PATCH",
+            }),
+            invalidatesTags: ["RIDE"],
+        }),
 
+        rejectRide: builder.mutation<IResponse<Ride>, string>({
+            query: (rideId: string) => ({
+                url: `/ride/reject/${rideId}`,
+                method: "PATCH",
+            }),
+            invalidatesTags: ["RIDE"],
+        }),
+
+        updateRideStatusAfterAccepted:builder.mutation<IResponse<Ride>, { rideId: string; status: string }>({
+            query: ({ rideId, status }) => ({
+                url: `/ride/status-change/${rideId}`,
+                method: "PATCH",
+                data: { status },
+            }),
+            invalidatesTags: ["RIDE"],
+        }),
     })
 });
 
-export const { useRequestRideMutation, useActiveRideQuery, useCancelRideMutation, useGetApproximateFareQuery, useGetTotalRidesCountQuery, useGetRideHistoryQuery } = rideApi;
+export const { useRequestRideMutation, useActiveRideQuery, useCancelRideMutation, useGetApproximateFareQuery, useGetTotalRidesCountQuery, useGetRideHistoryQuery, useGetIncomingRidesQuery, useAcceptRideMutation, useRejectRideMutation,useUpdateRideStatusAfterAcceptedMutation } = rideApi;
