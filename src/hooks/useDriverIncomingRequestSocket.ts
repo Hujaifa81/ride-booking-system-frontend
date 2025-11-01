@@ -7,7 +7,7 @@ type UseRideSocketOpts = {
   onNewRide?: (payload: Ride) => void;
 };
 
-export const useDriverIncomingRequestSocket = ({ enabled = true, onNewRide }: UseRideSocketOpts) => {
+export const useDriverIncomingRequestSocket = ({ enabled=true, onNewRide }: UseRideSocketOpts) => {
   useEffect(() => {
     console.log("useRideSocket - enabled:", enabled);
     if (!enabled) return;

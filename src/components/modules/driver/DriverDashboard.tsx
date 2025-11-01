@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import {
   Car,
   MapPin,
@@ -12,16 +12,32 @@ import {
   XCircle,
   TrendingUp,
   Clock,
+  Loader2,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useGetDriverProfileQuery, useUpdateDriverStatusMutation } from "@/redux/features/driver/driver.api";
 import { DriverStatus } from "@/constants/status";
 import { toast } from "sonner";
 import DriverLocationModal from "./DriverLocationModal";
 import {
   useAcceptRideMutation,
+  useActiveRideQuery,
+  useCancelRideMutation,
   useGetIncomingRidesQuery,
   useRejectRideMutation,
   useUpdateRideStatusAfterAcceptedMutation,
@@ -71,6 +87,8 @@ const getActiveRideBadge = (status: string) => {
       return "Completed";
     case "CANCELLED_BY_DRIVER":
       return "Cancelled";
+    case "ACCEPTED":
+      return "Accepted";
     default:
       return status;
   }
@@ -91,17 +109,28 @@ const DriverDashboard = () => {
     refetch: refetchIncomingRides,
   } = useGetIncomingRidesQuery(undefined);
 
+  const {
+    data: activeRideData,
+    isLoading: isActiveRideLoading,
+    refetch: refetchActiveRide,
+  } = useActiveRideQuery(undefined);
+
   const [updateStatus, { isLoading: isUpdating }] = useUpdateDriverStatusMutation();
   const [acceptRide, { isLoading: isAccepting }] = useAcceptRideMutation();
   const [rejectRide, { isLoading: isRejecting }] = useRejectRideMutation();
+  const [cancelRide, { isLoading: isCancelling }] = useCancelRideMutation();
   const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] = useUpdateRideStatusAfterAcceptedMutation();
-
   const status = (driverProfile as any)?.data?.status;
   const isAvailable = status === DriverStatus.AVAILABLE;
   const isOnTrip = status === DriverStatus.ON_TRIP;
   const isOffline = status === DriverStatus.OFFLINE || !status;
 
+  // Use RTK Query activeRide
   const [activeRide, setActiveRide] = useState<Ride | null>(null);
+
+  useEffect(() => {
+    setActiveRide(activeRideData?.data ?? null);
+  }, [activeRideData]);
 
   const [metrics, setMetrics] = useState({
     earningsToday: 126.75,
@@ -117,6 +146,10 @@ const DriverDashboard = () => {
 
   const [showLocModal, setShowLocModal] = useState(false);
 
+  // Cancel dialog state
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [cancelReason, setCancelReason] = useState("");
+
   const profileCoords = useMemo<[number, number] | null>(() => {
     const raw = (driverProfile as any)?.data?.location?.coordinates;
     if (Array.isArray(raw) && raw.length === 2 && raw.every((n: any) => typeof n === "number")) {
@@ -127,9 +160,11 @@ const DriverDashboard = () => {
 
   useDriverIncomingRequestSocket({
     enabled: isAvailable,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onNewRide: async (_ride: Ride) => {
       toast.success("New ride request received!");
       await refetchIncomingRides();
+      await refetchActiveRide();
     },
   });
 
@@ -146,10 +181,8 @@ const DriverDashboard = () => {
 
   const acceptRequest = async (ride: Ride) => {
     try {
-      const res = await acceptRide(ride._id).unwrap();
-      const accepted = (res as any)?.data || ride;
-      setActiveRide({ ...accepted });
-      await Promise.all([refetchIncomingRides(), refetchProfile()]);
+      await acceptRide(ride._id).unwrap();
+      await Promise.all([refetchIncomingRides(), refetchProfile(), refetchActiveRide()]);
     } catch (e: any) {
       toast.error(e?.data?.message || "Failed to accept ride");
     }
@@ -165,18 +198,32 @@ const DriverDashboard = () => {
     }
   };
 
+  const handleCancelRide = async () => {
+    if (!activeRide) return;
+    try {
+      await cancelRide({ rideId: activeRide._id, canceledReason: cancelReason }).unwrap();
+      setShowCancelDialog(false);
+      setCancelReason("");
+      setActiveRide(null);
+      toast.success("Ride cancelled successfully");
+      await refetchProfile();
+      await refetchActiveRide();
+    } catch (e: any) {
+      toast.error(e?.data?.message || "Failed to cancel ride");
+    }
+  };
+
   const handleStatusChange = async (ride: Ride, nextStatus: string) => {
     try {
       const res = await statusUpdateAfterAccepted({ rideId: ride._id, status: nextStatus }).unwrap();
       setActiveRide(res?.data || null);
       toast.success(`Status updated to ${getActiveRideBadge(nextStatus)}`);
       await refetchProfile();
+      await refetchActiveRide();
     } catch (e: any) {
       toast.error(e?.data?.message || "Failed to update ride status");
     }
   };
-
-  
 
   const progressBar = (value: number, color = "bg-emerald-500") => (
     <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden">
@@ -206,6 +253,11 @@ const DriverDashboard = () => {
   const mapKey = `map-${profileCoords ? `${profileCoords[1]}-${profileCoords[0]}` : "default"}`;
 
   const incomingRides: Ride[] = (incomingRidesData as any)?.data || [];
+
+  // Cancel button enabled for these statuses
+  const cancelEnabledStatuses = ["ACCEPTED", "GOING_TO_PICK_UP", "DRIVER_ARRIVED"];
+  const isCancelEnabled =
+    activeRide && cancelEnabledStatuses.includes(activeRide.status);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -359,7 +411,9 @@ const DriverDashboard = () => {
               <div>
                 <CardTitle>Active Ride</CardTitle>
                 <CardDescription>
-                  {activeRide
+                  {isActiveRideLoading
+                    ? "Loading active ride..."
+                    : activeRide
                     ? `Ride ${activeRide._id}`
                     : isAvailable
                     ? "You are available for new requests"
@@ -478,15 +532,66 @@ const DriverDashboard = () => {
                             Completed
                           </Button>
                         )}
-                        <Button
-                          variant="outline"
-                          className="flex-1"
-                          onClick={() => handleStatusChange(activeRide, "CANCELLED_BY_DRIVER")}
-                          disabled={isStatusChanging}
-                        >
-                          <XCircle className="w-4 h-4 mr-2" />
-                          Cancel
-                        </Button>
+                        {/* Cancel Button with Dialog */}
+                        <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
+                          <AlertDialogTrigger asChild>
+                            <Button
+                              variant="outline"
+                              className="flex-1"
+                              disabled={!isCancelEnabled || isCancelling}
+                            >
+                              {isCancelling ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                  Cancelling...
+                                </>
+                              ) : (
+                                <>
+                                  <XCircle className="w-4 h-4 mr-2" />
+                                  Cancel
+                                </>
+                              )}
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Cancel Ride</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to cancel this ride? This action cannot be undone.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <div className="space-y-2 py-4">
+                              <Label htmlFor="cancel-reason">Reason for cancellation (optional)</Label>
+                              <Input
+                                id="cancel-reason"
+                                placeholder="e.g., Emergency, vehicle issue, etc."
+                                value={cancelReason}
+                                onChange={(e) => setCancelReason(e.target.value)}
+                                maxLength={200}
+                              />
+                              <p className="text-xs text-gray-500">{cancelReason.length}/200 characters</p>
+                            </div>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={() => setCancelReason("")}>
+                                Keep Ride
+                              </AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={handleCancelRide}
+                                disabled={isCancelling}
+                                className="bg-red-600 hover:bg-red-700"
+                              >
+                                {isCancelling ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                    Cancelling...
+                                  </>
+                                ) : (
+                                  "Cancel Ride"
+                                )}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
                       </div>
                       <Button variant="outline" className="w-full sm:w-48" onClick={() => alert("Calling passenger...")}>
                         <Phone className="w-4 h-4 mr-2" />
