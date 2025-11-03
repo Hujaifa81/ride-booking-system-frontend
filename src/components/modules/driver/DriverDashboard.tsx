@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useMemo, useState, useEffect } from "react";
+import { useSelector, useDispatch } from "react-redux";
 import {
   Car,
   MapPin,
@@ -44,8 +45,13 @@ import {
 } from "@/redux/features/ride/ride.api";
 import type { Ride } from "@/types";
 import { useDriverIncomingRequestSocket } from "@/hooks/useDriverIncomingRequestSocket";
-
-// Map imports
+import {
+  removeIncomingRequest,
+  setIncomingRequests,
+  setActiveRide,
+  clearActiveRide,
+  clearIncomingRequests,
+} from "@/redux/features/ride/ride.slice";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -69,7 +75,7 @@ const driverIcon = new L.Icon({
 
 // Helpers
 const toLeaflet = (lngLat?: [number, number] | null): [number, number] | undefined =>
-  lngLat ? [lngLat[1], lngLat[0]] : undefined; // [lng, lat] -> [lat, lng]
+  lngLat ? [lngLat[1], lngLat[0]] : undefined;
 const dhakaCenter: [number, number] = [23.8103, 90.4125];
 const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
@@ -87,6 +93,8 @@ const getActiveRideBadge = (status: string) => {
       return "Completed";
     case "CANCELLED_BY_DRIVER":
       return "Cancelled";
+    case "CANCELLED_BY_RIDER":
+      return "Cancelled by rider";
     case "ACCEPTED":
       return "Accepted";
     default:
@@ -95,6 +103,12 @@ const getActiveRideBadge = (status: string) => {
 };
 
 const DriverDashboard = () => {
+  const dispatch = useDispatch();
+
+  // Redux selectors - use these directly
+  const incomingRequestsRedux = useSelector((state: any) => state.incomingRequests);
+  const activeRideRedux = useSelector((state: any) => state.activeRide);
+
   const {
     data: driverProfile,
     isLoading: isProfileLoading,
@@ -104,8 +118,6 @@ const DriverDashboard = () => {
 
   const {
     data: incomingRidesData,
-    isLoading: isIncomingRidesLoading,
-    isError: isIncomingRidesError,
     refetch: refetchIncomingRides,
   } = useGetIncomingRidesQuery(undefined);
 
@@ -116,21 +128,29 @@ const DriverDashboard = () => {
   } = useActiveRideQuery(undefined);
 
   const [updateStatus, { isLoading: isUpdating }] = useUpdateDriverStatusMutation();
-  const [acceptRide, { isLoading: isAccepting }] = useAcceptRideMutation();
+  const [acceptRide] = useAcceptRideMutation();
   const [rejectRide, { isLoading: isRejecting }] = useRejectRideMutation();
   const [cancelRide, { isLoading: isCancelling }] = useCancelRideMutation();
   const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] = useUpdateRideStatusAfterAcceptedMutation();
+
   const status = (driverProfile as any)?.data?.status;
   const isAvailable = status === DriverStatus.AVAILABLE;
   const isOnTrip = status === DriverStatus.ON_TRIP;
   const isOffline = status === DriverStatus.OFFLINE || !status;
 
-  // Use RTK Query activeRide
-  const [activeRide, setActiveRide] = useState<Ride | null>(null);
-
+  // Sync incoming rides from API to Redux
   useEffect(() => {
-    setActiveRide(activeRideData?.data ?? null);
-  }, [activeRideData]);
+    if (incomingRidesData?.data) {
+      dispatch(setIncomingRequests(incomingRidesData.data));
+    }
+  }, [incomingRidesData, dispatch]);
+
+  // Sync active ride from API to Redux
+  useEffect(() => {
+    if (activeRideData?.data) {
+      dispatch(setActiveRide(activeRideData.data));
+    }
+  }, [activeRideData, dispatch]);
 
   const [metrics, setMetrics] = useState({
     earningsToday: 126.75,
@@ -145,25 +165,35 @@ const DriverDashboard = () => {
   const onlineM = metrics.onlineMins % 60;
 
   const [showLocModal, setShowLocModal] = useState(false);
-
-  // Cancel dialog state
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
+  const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
 
   const profileCoords = useMemo<[number, number] | null>(() => {
     const raw = (driverProfile as any)?.data?.location?.coordinates;
     if (Array.isArray(raw) && raw.length === 2 && raw.every((n: any) => typeof n === "number")) {
-      return [raw[0], raw[1]]; // [lng, lat]
+      return [raw[0], raw[1]];
     }
     return null;
   }, [driverProfile]);
 
+  // Socket hook - use Redux activeRide
   useDriverIncomingRequestSocket({
-    enabled: isAvailable,
+    enabled: isAvailable && !activeRideRedux?.ride,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onNewRide: async (_ride: Ride) => {
       toast.success("New ride request received!");
       await refetchIncomingRides();
+    },
+    activeRide: activeRideRedux?.ride || null,
+    onActiveRideUpdate: async (ride: Ride) => {
+      if (ride.status && ride.status.startsWith("CANCELLED")) {
+        toast.error("Ride cancelled by rider.");
+        dispatch(clearActiveRide());
+      } else {
+        dispatch(setActiveRide(ride));
+      }
+      await refetchProfile();
       await refetchActiveRide();
     },
   });
@@ -181,16 +211,24 @@ const DriverDashboard = () => {
 
   const acceptRequest = async (ride: Ride) => {
     try {
-      await acceptRide(ride._id).unwrap();
+      setAcceptingRideId(ride._id);
+      const res = await acceptRide(ride._id).unwrap();
+      dispatch(setActiveRide(res?.data || null));
+      // Clear all incoming requests after accepting one - REAL WORLD BEHAVIOR
+      dispatch(clearIncomingRequests());
+      toast.success("Ride accepted successfully!");
       await Promise.all([refetchIncomingRides(), refetchProfile(), refetchActiveRide()]);
     } catch (e: any) {
       toast.error(e?.data?.message || "Failed to accept ride");
+    } finally {
+      setAcceptingRideId(null);
     }
   };
 
   const declineRequest = async (rideId: string) => {
     try {
       await rejectRide(rideId).unwrap();
+      dispatch(removeIncomingRequest(rideId));
       setMetrics((m) => ({ ...m, acceptanceRate: Math.max(70, m.acceptanceRate - 1) }));
       await refetchIncomingRides();
     } catch (e: any) {
@@ -199,12 +237,12 @@ const DriverDashboard = () => {
   };
 
   const handleCancelRide = async () => {
-    if (!activeRide) return;
+    if (!activeRideRedux?.ride) return;
     try {
-      await cancelRide({ rideId: activeRide._id, canceledReason: cancelReason }).unwrap();
+      await cancelRide({ rideId: activeRideRedux.ride._id, canceledReason: cancelReason }).unwrap();
       setShowCancelDialog(false);
       setCancelReason("");
-      setActiveRide(null);
+      dispatch(clearActiveRide());
       toast.success("Ride cancelled successfully");
       await refetchProfile();
       await refetchActiveRide();
@@ -216,8 +254,11 @@ const DriverDashboard = () => {
   const handleStatusChange = async (ride: Ride, nextStatus: string) => {
     try {
       const res = await statusUpdateAfterAccepted({ rideId: ride._id, status: nextStatus }).unwrap();
-      setActiveRide(res?.data || null);
+      dispatch(setActiveRide(res?.data || null));
       toast.success(`Status updated to ${getActiveRideBadge(nextStatus)}`);
+      if (nextStatus === "COMPLETED") {
+        dispatch(clearActiveRide());
+      }
       await refetchProfile();
       await refetchActiveRide();
     } catch (e: any) {
@@ -252,12 +293,15 @@ const DriverDashboard = () => {
   const leafletCenter = toLeaflet(profileCoords) || dhakaCenter;
   const mapKey = `map-${profileCoords ? `${profileCoords[1]}-${profileCoords[0]}` : "default"}`;
 
-  const incomingRides: Ride[] = (incomingRidesData as any)?.data || [];
+  // Use Redux state for incoming rides and active ride
+  const incomingRides: Ride[] = incomingRequestsRedux?.requests || [];
+  const activeRide = activeRideRedux?.ride || null;
 
-  // Cancel button enabled for these statuses
   const cancelEnabledStatuses = ["ACCEPTED", "GOING_TO_PICK_UP", "DRIVER_ARRIVED"];
-  const isCancelEnabled =
-    activeRide && cancelEnabledStatuses.includes(activeRide.status);
+  const isCancelEnabled = !!(activeRide && cancelEnabledStatuses.includes(activeRide.status));
+
+  // Disable accept button if accepting OR if there's an active ride
+  const isAcceptDisabled = !!acceptingRideId || !!activeRide;
 
   return (
     <div className="p-4 sm:p-6 lg:p-8">
@@ -293,7 +337,6 @@ const DriverDashboard = () => {
         </div>
       </div>
 
-      {/* Profile load/error states */}
       {isProfileError && (
         <div className="mb-4 text-sm text-rose-600">Failed to load profile. Try Refresh.</div>
       )}
@@ -395,7 +438,7 @@ const DriverDashboard = () => {
             </MapContainer>
             {!profileCoords && (
               <div className="absolute inset-x-0 mt-2 ml-2 px-2 py-1 rounded bg-amber-50 border text-amber-700 w-max text-xs">
-                Location not set. Click “Set Location”.
+                Location not set. Click "Set Location".
               </div>
             )}
           </div>
@@ -532,7 +575,6 @@ const DriverDashboard = () => {
                             Completed
                           </Button>
                         )}
-                        {/* Cancel Button with Dialog */}
                         <AlertDialog open={showCancelDialog} onOpenChange={setShowCancelDialog}>
                           <AlertDialogTrigger asChild>
                             <Button
@@ -607,7 +649,7 @@ const DriverDashboard = () => {
                   {isAvailable ? "No active rides. Waiting for the next request..." : "You are offline."}
                 </div>
                 {isAvailable && incomingRides.length > 0 && (
-                  <div className="text-xs text-slate-500 mt-1">You’ll be notified when a new request arrives.</div>
+                  <div className="text-xs text-slate-500 mt-1">You'll be notified when a new request arrives.</div>
                 )}
                 {isOffline && (
                   <Button className="mt-4" onClick={toggleAvailability} disabled={isUpdating || isProfileLoading}>
@@ -618,19 +660,22 @@ const DriverDashboard = () => {
             )}
           </CardContent>
         </Card>
-        {/* Incoming Requests */}
+
+        {/* Incoming Requests - Using Redux State */}
         <Card className="xl:col-span-2 border-0 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle>Incoming Requests</CardTitle>
             <CardDescription>Accept or decline new ride requests</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {isIncomingRidesLoading ? (
+            {incomingRequestsRedux?.isLoading ? (
               <div className="text-sm text-slate-600 border rounded-lg p-6 text-center">Loading incoming requests...</div>
-            ) : isIncomingRidesError ? (
+            ) : incomingRequestsRedux?.error ? (
               <div className="text-sm text-rose-600 border rounded-lg p-6 text-center">Failed to load incoming requests.</div>
             ) : incomingRides.length === 0 ? (
-              <div className="text-sm text-slate-600 border rounded-lg p-6 text-center">No pending requests</div>
+              <div className="text-sm text-slate-600 border rounded-lg p-6 text-center">
+                {activeRide ? "No more requests while you have an active ride" : "No pending requests"}
+              </div>
             ) : (
               incomingRides.map((ride) => {
                 const pickup =
@@ -643,10 +688,14 @@ const DriverDashboard = () => {
                 const distanceKm = typeof ride.distance === "number" ? ride.distance : undefined;
                 const fare = typeof ride.approxFare === "number" ? ride.approxFare : undefined;
 
+                const isThisRideAccepting = acceptingRideId === ride._id;
+
                 return (
                   <div
                     key={ride._id}
-                    className="rounded-lg border p-3 sm:p-4 bg-white hover:bg-slate-50/60 transition"
+                    className={`rounded-lg border p-3 sm:p-4 bg-white transition ${
+                      isAcceptDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-slate-50/60"
+                    }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                       <div className="flex-1">
@@ -683,16 +732,29 @@ const DriverDashboard = () => {
                         <Button
                           className="flex-1 sm:flex-none"
                           onClick={() => acceptRequest(ride)}
-                          disabled={isOnTrip || isAccepting}
-                          title={isOnTrip ? "You are on a trip" : undefined}
+                          disabled={isAcceptDisabled}
+                          title={
+                            acceptingRideId
+                              ? "Accepting a ride..."
+                              : activeRide
+                              ? "Complete or cancel your active ride first"
+                              : undefined
+                          }
                         >
-                          {isAccepting ? "Accepting..." : "Accept"}
+                          {isThisRideAccepting ? (
+                            <>
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                              Accepting...
+                            </>
+                          ) : (
+                            "Accept"
+                          )}
                         </Button>
                         <Button
                           variant="outline"
                           className="flex-1 sm:flex-none"
                           onClick={() => declineRequest(ride._id)}
-                          disabled={isRejecting}
+                          disabled={isRejecting || isAcceptDisabled}
                         >
                           {isRejecting ? "Rejecting..." : "Decline"}
                         </Button>
@@ -704,6 +766,7 @@ const DriverDashboard = () => {
             )}
           </CardContent>
         </Card>
+
         {/* Recent Activity */}
         <Card className="border-0 shadow-sm">
           <CardHeader className="pb-3">
@@ -728,7 +791,9 @@ const DriverDashboard = () => {
               ))}
             </ul>
             <div className="mt-4">
-              <Button variant="outline" size="sm">View All</Button>
+              <Button variant="outline" size="sm">
+                View All
+              </Button>
             </div>
           </CardContent>
         </Card>

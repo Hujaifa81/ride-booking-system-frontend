@@ -1,12 +1,13 @@
 import { configureStore } from "@reduxjs/toolkit";
 import { baseApi } from "./baseApi";
 import { setupListeners } from "@reduxjs/toolkit/query";
-import activeRideReducer from "./features/ride/ride.slice";
+import { activeRideReducer, incomingRequestsReducer } from "./features/ride/ride.slice";
 
 export const store = configureStore({
   reducer: {
     [baseApi.reducerPath]: baseApi.reducer,
     activeRide: activeRideReducer,
+    incomingRequests: incomingRequestsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware().concat(baseApi.middleware),
