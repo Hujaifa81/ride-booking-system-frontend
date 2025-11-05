@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useDispatch } from "react-redux";
 import { getSocket } from "@/lib/socket";
-import { addIncomingRequest, setActiveRide } from "@/redux/features/ride/ride.slice";
+import { addIncomingRequest, removeIncomingRequest, setActiveRide } from "@/redux/features/ride/ride.slice";
 import type { Ride } from "@/types";
 
 export const useDriverIncomingRequestSocket = ({
@@ -9,11 +9,13 @@ export const useDriverIncomingRequestSocket = ({
   onNewRide,
   activeRide,
   onActiveRideUpdate,
+  rideCancelledBeforeDriverAcceptance,
 }: {
   enabled?: boolean;
   onNewRide?: (payload: Ride) => void;
   activeRide?: Ride | null;
   onActiveRideUpdate?: (payload: Ride) => void;
+  rideCancelledBeforeDriverAcceptance?: (payload: { rideId: string }) => void;
 }) => {
   const dispatch = useDispatch();
   const currentRoomId = useRef<string | null>(null);
@@ -41,6 +43,15 @@ export const useDriverIncomingRequestSocket = ({
       dispatch(addIncomingRequest(payload));
       onNewRide?.(payload);
     };
+
+     const handleRideCancelledBeforeDriverAcceptance = (payload: { rideId: string }) => {
+      console.log("ride_cancelled_before_acceptance received", payload);
+      dispatch(removeIncomingRequest(payload.rideId));
+      rideCancelledBeforeDriverAcceptance?.(payload);
+    };
+    socket.off("ride_cancelled");
+    socket.on("ride_cancelled", handleRideCancelledBeforeDriverAcceptance);
+
 
     const handleRideUpdate = (payload: Ride) => {
       console.log("ride_updated received", payload);
@@ -87,10 +98,10 @@ export const useDriverIncomingRequestSocket = ({
         currentRoomId.current = nextRoomId;
 
         if (subscribedToRideUpdate.current) {
-          socket.off("ride_updated");
+          socket.off("ride_update");
           subscribedToRideUpdate.current = false;
         }
-        socket.on("ride_updated", handleRideUpdate);
+        socket.on("ride_update", handleRideUpdate);
         subscribedToRideUpdate.current = true;
       }
     } else {
@@ -100,15 +111,16 @@ export const useDriverIncomingRequestSocket = ({
         currentRoomId.current = null;
       }
       if (subscribedToRideUpdate.current) {
-        socket.off("ride_updated");
+        socket.off("ride_update");
         subscribedToRideUpdate.current = false;
       }
     }
 
     return () => {
-      socket.off("new_ride_request", handleNewRide);
+      // socket.off("new_ride_request", handleNewRide);
+      
       if (subscribedToRideUpdate.current) {
-        socket.off("ride_updated", handleRideUpdate);
+        socket.off("ride_update", handleRideUpdate);
         subscribedToRideUpdate.current = false;
       }
       if (currentRoomId.current) {
@@ -117,5 +129,5 @@ export const useDriverIncomingRequestSocket = ({
         currentRoomId.current = null;
       }
     };
-  }, [enabled, activeRide?._id, activeRide?.status, onNewRide, onActiveRideUpdate, dispatch]);
+  }, [enabled, activeRide?._id, activeRide?.status, onNewRide, onActiveRideUpdate, dispatch, rideCancelledBeforeDriverAcceptance]);
 };

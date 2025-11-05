@@ -141,7 +141,9 @@ const DriverDashboard = () => {
   // Sync incoming rides from API to Redux
   useEffect(() => {
     if (incomingRidesData?.data) {
+      
       dispatch(setIncomingRequests(incomingRidesData.data));
+      
     }
   }, [incomingRidesData, dispatch]);
 
@@ -196,6 +198,11 @@ const DriverDashboard = () => {
       await refetchProfile();
       await refetchActiveRide();
     },
+    rideCancelledBeforeDriverAcceptance: async (payload: { rideId: string }) => {
+      toast.error(`Ride ${payload.rideId} cancelled before acceptance.`);
+      await refetchIncomingRides();
+    },
+    
   });
 
   const toggleAvailability = async () => {

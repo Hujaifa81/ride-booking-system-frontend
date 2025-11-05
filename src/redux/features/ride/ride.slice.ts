@@ -2,12 +2,14 @@ import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
 import type { Ride, RideStatus } from '@/types';
 
+
+
 interface ActiveRideState {
   ride: Ride | null;
   isSocketConnected: boolean;
 }
 
-interface IncomingRequestsState {
+export interface IncomingRequestsState {
   requests: Ride[];
   isLoading: boolean;
   error: string | null;
@@ -87,6 +89,7 @@ const incomingRequestsSlice = createSlice({
     },
     removeIncomingRequest: (state, action: PayloadAction<string>) => {
       state.requests = state.requests.filter((ride) => ride._id !== action.payload);
+      
     },
     clearIncomingRequests: (state) => {
       state.requests = [];
@@ -99,6 +102,7 @@ const incomingRequestsSlice = createSlice({
       state.error = action.payload;
       state.isLoading = false;
     },
+    
   },
 });
 

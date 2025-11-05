@@ -1,5 +1,6 @@
 
 import DriverDashboardPage from "@/pages/DriverDashboardPage";
+import IncomingRequestsPage from "@/pages/IncomingRequestsPage";
 import ProfilePage from "@/pages/ProfilePage";
 import VehicleManagementPage from "@/pages/VehicleManagementPage";
 import type { ISidebarItem } from "@/types";
@@ -14,9 +15,9 @@ export const driverSidebarItems: ISidebarItem[] = [
         component: DriverDashboardPage,
       },
       {
-        title: "Ride Request",
+        title: "Incoming Request",
         url: "/driver/incoming-request",
-        // component: RideRequest,
+        component: IncomingRequestsPage,
       },
       {
         title: "Active Ride",
