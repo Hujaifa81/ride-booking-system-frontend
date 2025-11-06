@@ -181,7 +181,7 @@ const DriverDashboard = () => {
 
   // Socket hook - use Redux activeRide
   useDriverIncomingRequestSocket({
-    enabled: isAvailable && !activeRideRedux?.ride,
+    enabled: isAvailable || !!activeRideRedux?.ride,
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     onNewRide: async (_ride: Ride) => {
       toast.success("New ride request received!");

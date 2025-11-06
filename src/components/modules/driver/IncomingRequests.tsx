@@ -34,6 +34,7 @@ import {
   setActiveRide,
   clearIncomingRequests,
 } from "@/redux/features/ride/ride.slice";
+import { useDriverIncomingRequestSocket } from "@/hooks/useDriverIncomingRequestSocket";
 
 const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
@@ -47,7 +48,7 @@ const IncomingRequests = () => {
     data: incomingRidesData,
     isLoading: isApiLoading,
     error: apiError,
-    
+    refetch: refetchIncomingRides,
   } = useGetIncomingRidesQuery(undefined);
 
   const [acceptRide] = useAcceptRideMutation();
@@ -71,6 +72,31 @@ const IncomingRequests = () => {
   const activeRide = activeRideRedux?.ride || null;
 
   const isAcceptDisabled = !!acceptingRideId || !!activeRide;
+
+  // ✅ ADD SOCKET HOOK HERE - Listen for ride updates immediately
+  useDriverIncomingRequestSocket({
+    enabled: true, // Always enabled on this page
+    onNewRide: async (ride: Ride) => {
+      console.log("✅ New ride received on IncomingRequests page:", ride._id);
+      toast.success("New ride request received!");
+      await refetchIncomingRides();
+    },
+    activeRide: activeRide || null,
+    onActiveRideUpdate: async (ride: Ride) => {
+      console.log("📡 Active ride updated on IncomingRequests page:", ride.status);
+      if (ride.status && ride.status.startsWith("CANCELLED")) {
+        toast.error("Ride cancelled by rider.");
+        dispatch(clearIncomingRequests());
+      } else {
+        dispatch(setActiveRide(ride));
+      }
+    },
+    rideCancelledBeforeDriverAcceptance: async (payload: { rideId: string }) => {
+      console.log("🚫 Ride cancelled before acceptance:", payload.rideId);
+      toast.error(`Ride ${payload.rideId} cancelled before acceptance.`);
+      await refetchIncomingRides();
+    },
+  });
 
   // Filter rides based on search and type
   // const filteredRides = incomingRides.filter((ride) => {
@@ -255,23 +281,7 @@ const IncomingRequests = () => {
               <p className="text-xs text-slate-500 mt-2">This may take a few seconds</p>
             </CardContent>
           </Card>
-        ) : incomingRequestsRedux?.error || apiError ? (
-          <Card className="border-0 shadow-lg bg-rose-50 border border-rose-200">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-semibold text-rose-700">Failed to load requests</p>
-                  <p className="text-sm text-rose-600 mt-1">
-                    {incomingRequestsRedux?.error || "Please check your connection and try again."}
-                  </p>
-                 
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ) : 
-        filteredRides.length === 0 ? (
+        ) :filteredRides.length === 0 ? (
           <Card className="border-0 shadow-lg">
             <CardContent className="p-12 text-center">
               <div className="space-y-4">
@@ -282,7 +292,7 @@ const IncomingRequests = () => {
                   <h3 className="text-lg font-semibold text-slate-900">No Requests Found</h3>
                   <p className="text-slate-600 text-sm mt-1 max-w-md mx-auto">
                     {incomingRides.length === 0
-                      ? "No incoming ride requests right now. Stay online to receive new requests."
+                      ? "There are currently no incoming ride requests. Please check back later."
                       : "No rides match your search filters. Try adjusting your search."}
                   </p>
                   {incomingRides.length > 0 && (
@@ -302,7 +312,23 @@ const IncomingRequests = () => {
               </div>
             </CardContent>
           </Card>
-        ) : (
+        )  : 
+         incomingRequestsRedux?.error || apiError ? (
+          <Card className="border-0 shadow-lg bg-rose-50 border border-rose-200">
+            <CardContent className="p-6">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="font-semibold text-rose-700">Failed to load requests</p>
+                  <p className="text-sm text-rose-600 mt-1">
+                    {incomingRequestsRedux?.error || "Please check your connection and try again."}
+                  </p>
+                 
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ): (
           <div className="space-y-4">
             {filteredRides.map((ride, index) => {
               const pickup =
