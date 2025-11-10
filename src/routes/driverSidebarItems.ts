@@ -1,4 +1,5 @@
 
+import DriverActiveRidePage from "@/pages/DriverActiveRidePage";
 import DriverDashboardPage from "@/pages/DriverDashboardPage";
 import IncomingRequestsPage from "@/pages/IncomingRequestsPage";
 import ProfilePage from "@/pages/ProfilePage";
@@ -22,7 +23,7 @@ export const driverSidebarItems: ISidebarItem[] = [
       {
         title: "Active Ride",
         url: "/driver/active-ride",
-        // component: ActiveRide,
+        component: DriverActiveRidePage,
       },
       {
         title: "Vehicle Management",

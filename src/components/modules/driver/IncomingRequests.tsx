@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useSelector, useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import { useState, useCallback, useEffect } from "react";
 import {
   MapPin,
@@ -14,13 +14,10 @@ import {
   MessageSquare,
   MapPinned,
   Zap,
- 
 } from "lucide-react";
-import { Card, CardContent} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-// import { Input } from "@/components/ui/input";
-// import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import {
   useAcceptRideMutation,
@@ -30,99 +27,53 @@ import {
 import type { Ride } from "@/types";
 import {
   removeIncomingRequest,
-  setIncomingRequests,
   setActiveRide,
   clearIncomingRequests,
 } from "@/redux/features/ride/ride.slice";
-import { useDriverIncomingRequestSocket } from "@/hooks/useDriverIncomingRequestSocket";
 
 const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
 const IncomingRequests = () => {
   const dispatch = useDispatch();
-  const incomingRequestsRedux = useSelector((state: any) => state.incomingRequests);
-  const activeRideRedux = useSelector((state: any) => state.activeRide);
 
-  // Fetch from API
-  const {
-    data: incomingRidesData,
-    isLoading: isApiLoading,
-    error: apiError,
-    refetch: refetchIncomingRides,
-  } = useGetIncomingRidesQuery(undefined);
+  // ✅ Get data from Redux (populated by global socket listener)
+  const incomingRides = useSelector((state: any) => state.incomingRequests?.requests || []);
+  const activeRide = useSelector((state: any) => state.activeRide?.ride || null);
+  const isSocketConnected = useSelector((state: any) => state.ride?.socketConnected || false);
 
+  // ✅ Get incoming rides with polling (for fresh data on mount)
+  const { refetch: refetchIncomingRides } = useGetIncomingRidesQuery(undefined, {
+    refetchOnMountOrArgChange: true,
+    pollingInterval: 5000,
+  });
+
+  // ✅ Mutations
   const [acceptRide] = useAcceptRideMutation();
   const [rejectRide, { isLoading: isRejecting }] = useRejectRideMutation();
+
+  // UI State
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [rejectingRideId, setRejectingRideId] = useState<string | null>(null);
-  // const [searchQuery, setSearchQuery] = useState("");
-  // const [filterType, setFilterType] = useState<"all" | "nearby" | "highfare">("all");
-  
-
-  // Sync API data to Redux on mount/change
-  useEffect(() => {
-    if (incomingRidesData?.data) {
-      console.log("📡 Syncing incoming rides to Redux:", incomingRidesData.data.length);
-      dispatch(setIncomingRequests(incomingRidesData?.data));
-    }
-  }, [incomingRidesData?.data, dispatch]);
-
-  // Use Redux state (synced from API)
-  const incomingRides: Ride[] = incomingRequestsRedux?.requests || [];
-  const activeRide = activeRideRedux?.ride || null;
 
   const isAcceptDisabled = !!acceptingRideId || !!activeRide;
 
-  // ✅ ADD SOCKET HOOK HERE - Listen for ride updates immediately
-  useDriverIncomingRequestSocket({
-    enabled: true, // Always enabled on this page
-    onNewRide: async (ride: Ride) => {
-      console.log("✅ New ride received on IncomingRequests page:", ride._id);
-      toast.success("New ride request received!");
-      await refetchIncomingRides();
-    },
-    activeRide: activeRide || null,
-    onActiveRideUpdate: async (ride: Ride) => {
-      console.log("📡 Active ride updated on IncomingRequests page:", ride.status);
-      if (ride.status && ride.status.startsWith("CANCELLED")) {
-        toast.error("Ride cancelled by rider.");
-        dispatch(clearIncomingRequests());
-      } else {
-        dispatch(setActiveRide(ride));
-      }
-    },
-    rideCancelledBeforeDriverAcceptance: async (payload: { rideId: string }) => {
-      console.log("🚫 Ride cancelled before acceptance:", payload.rideId);
-      toast.error(`Ride ${payload.rideId} cancelled before acceptance.`);
-      await refetchIncomingRides();
-    },
-  });
+  // ✅ NEW: Refetch incoming rides when component mounts (fresh data)
+  useEffect(() => {
+    console.log("🔄 IncomingRequests mounted - fetching fresh data...");
+    refetchIncomingRides();
+  }, [refetchIncomingRides]);
 
-  // Filter rides based on search and type
-  // const filteredRides = incomingRides.filter((ride) => {
-  //   const matchesSearch =
-  //     ride._id?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-  //     ride.pickupAddress?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-  //     ride.dropOffAddress?.toLowerCase().includes(searchQuery.toLowerCase());
-
-  //   if (filterType === "nearby") {
-  //     return matchesSearch && (ride.distance || 0) < 5;
-  //   }
-  //   if (filterType === "highfare") {
-  //     return matchesSearch && (ride.approxFare || 0) > 15;
-  //   }
-  //   return matchesSearch;
-  // });
-
-  const filteredRides = incomingRides;
-
+  // ✅ Accept request
   const acceptRequest = useCallback(
     async (ride: Ride) => {
       try {
         setAcceptingRideId(ride._id);
         const res = await acceptRide(ride._id).unwrap();
+
+        // ✅ Update Redux - socket will also update via listener
         dispatch(setActiveRide(res?.data || null));
         dispatch(clearIncomingRequests());
+
         toast.success("Ride accepted successfully! 🎉");
       } catch (e: any) {
         toast.error(e?.data?.message || "Failed to accept ride");
@@ -133,12 +84,15 @@ const IncomingRequests = () => {
     [acceptRide, dispatch]
   );
 
+  // ✅ Decline request
   const declineRequest = useCallback(
     async (rideId: string) => {
       try {
         setRejectingRideId(rideId);
         await rejectRide(rideId).unwrap();
+
         dispatch(removeIncomingRequest(rideId));
+
         toast.success("Ride declined");
       } catch (e: any) {
         toast.error(e?.data?.message || "Failed to decline ride");
@@ -149,21 +103,14 @@ const IncomingRequests = () => {
     [rejectRide, dispatch]
   );
 
- 
-
-  // Stats
+  // ✅ Stats
   const avgFare =
     incomingRides.length > 0
-      ? (incomingRides.reduce((sum, r) => sum + (r.approxFare || 0), 0) / incomingRides.length).toFixed(2)
+      ? (incomingRides.reduce((sum: number, r: Ride) => sum + (r.approxFare || 0), 0) / incomingRides.length).toFixed(2)
       : "0.00";
 
-  // const avgDistance =
-  //   incomingRides.length > 0
-  //     ? (incomingRides.reduce((sum, r) => sum + (r.distance || 0), 0) / incomingRides.length).toFixed(1)
-  //     : "0.0";
-
-  const nearbyRides = incomingRides.filter((r) => (r.distance || 0) < 5).length;
-  const highFareRides = incomingRides.filter((r) => (r.approxFare || 0) > 15).length;
+  const nearbyRides = incomingRides.filter((r: Ride) => (r.distance || 0) < 5).length;
+  const highFareRides = incomingRides.filter((r: Ride) => (r.approxFare || 0) > 15).length;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-50 to-slate-100">
@@ -175,12 +122,19 @@ const IncomingRequests = () => {
               <h1 className="text-3xl font-bold text-slate-900">Incoming Requests</h1>
               <p className="text-sm text-slate-600 mt-1">Accept or decline new ride requests</p>
             </div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* ✅ Connection status indicator */}
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+                <div className={`w-2 h-2 rounded-full ${isSocketConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
+                <span className="text-xs text-slate-600">
+                  {isSocketConnected ? "✅ Connected" : "⚠️ Connecting..."}
+                </span>
+              </div>
+
               <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-base px-3 py-1.5">
                 <Zap className="w-4 h-4 mr-2" />
                 {incomingRides.length} Request{incomingRides.length !== 1 ? "s" : ""}
               </Badge>
-              
             </div>
           </div>
         </div>
@@ -233,55 +187,14 @@ const IncomingRequests = () => {
                   High Fare
                 </p>
                 <p className="text-3xl font-bold text-slate-900">{highFareRides}</p>
-                <p className="text-xs text-slate-500">Rides $15</p>
+                <p className="text-xs text-slate-500">Rides $15+</p>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Search & Filters */}
-        {/* <Card className="border-0 shadow-lg mb-8">
-          <CardContent className="pt-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <Input
-                  placeholder="Search by ride ID, pickup, or dropoff..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-10"
-                />
-              </div>
-              <Tabs
-                value={filterType}
-                onValueChange={(value: any) => setFilterType(value)}
-                className="w-full sm:w-auto"
-              >
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="all" className="text-xs">
-                    All
-                  </TabsTrigger>
-                  <TabsTrigger value="nearby" className="text-xs">
-                    Nearby
-                  </TabsTrigger>
-                  <TabsTrigger value="highfare" className="text-xs">
-                    High Fare
-                  </TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-          </CardContent>
-        </Card> */}
-
-        {/* Loading State - check both Redux AND API loading */}
-        {incomingRequestsRedux?.isLoading || isApiLoading ? (
-          <Card className="border-0 shadow-lg">
-            <CardContent className="p-12 text-center">
-              <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-              <p className="text-slate-600 font-medium">Loading incoming requests...</p>
-              <p className="text-xs text-slate-500 mt-2">This may take a few seconds</p>
-            </CardContent>
-          </Card>
-        ) :filteredRides.length === 0 ? (
+        {/* Empty State */}
+        {incomingRides.length === 0 ? (
           <Card className="border-0 shadow-lg">
             <CardContent className="p-12 text-center">
               <div className="space-y-4">
@@ -291,46 +204,17 @@ const IncomingRequests = () => {
                 <div>
                   <h3 className="text-lg font-semibold text-slate-900">No Requests Found</h3>
                   <p className="text-slate-600 text-sm mt-1 max-w-md mx-auto">
-                    {incomingRides.length === 0
-                      ? "There are currently no incoming ride requests. Please check back later."
-                      : "No rides match your search filters. Try adjusting your search."}
+                    {activeRide
+                      ? "You have an active ride. Complete it to receive new requests."
+                      : "There are currently no incoming ride requests. Please check back later."}
                   </p>
-                  {incomingRides.length > 0 && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-4"
-                      onClick={() => {
-                        // setSearchQuery("");
-                        // setFilterType("all");
-                      }}
-                    >
-                      Clear Filters
-                    </Button>
-                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
-        )  : 
-         incomingRequestsRedux?.error || apiError ? (
-          <Card className="border-0 shadow-lg bg-rose-50 border border-rose-200">
-            <CardContent className="p-6">
-              <div className="flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5" />
-                <div className="flex-1">
-                  <p className="font-semibold text-rose-700">Failed to load requests</p>
-                  <p className="text-sm text-rose-600 mt-1">
-                    {incomingRequestsRedux?.error || "Please check your connection and try again."}
-                  </p>
-                 
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ): (
+        ) : (
           <div className="space-y-4">
-            {filteredRides.map((ride, index) => {
+            {incomingRides.map((ride: Ride, index: number) => {
               const pickup =
                 ride.pickupAddress ||
                 (ride.pickupLocation?.coordinates
@@ -352,7 +236,7 @@ const IncomingRequests = () => {
                 <Card
                   key={ride._id}
                   className={`border-0 shadow-md hover:shadow-xl transition-all duration-300 overflow-hidden relative ${
-                    isAcceptDisabled ? "opacity-60" : ""
+                    isAcceptDisabled ? "opacity-60 pointer-events-none" : ""
                   }`}
                 >
                   {/* Card Number Badge */}
@@ -490,7 +374,7 @@ const IncomingRequests = () => {
                             variant="ghost"
                             size="sm"
                             className="flex-1 text-xs gap-1 hover:bg-blue-50"
-                            onClick={() => alert("Call passenger...")}
+                            onClick={() => toast.info("Calling passenger...")}
                           >
                             <Phone className="w-3 h-3" />
                             Call
@@ -499,7 +383,7 @@ const IncomingRequests = () => {
                             variant="ghost"
                             size="sm"
                             className="flex-1 text-xs gap-1 hover:bg-blue-50"
-                            onClick={() => alert("Message passenger...")}
+                            onClick={() => toast.info("Message passenger...")}
                           >
                             <MessageSquare className="w-3 h-3" />
                             Message

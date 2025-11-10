@@ -1,136 +1,191 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { getSocket } from "@/lib/socket";
-import { addIncomingRequest, removeIncomingRequest, setActiveRide } from "@/redux/features/ride/ride.slice";
+import {
+  addIncomingRequest,
+  removeIncomingRequest,
+  setActiveRide,
+  clearActiveRide,
+  clearIncomingRequests,
+} from "@/redux/features/ride/ride.slice";
 import type { Ride } from "@/types";
 import { useEffect, useRef } from "react";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
+import { rideApi } from "@/redux/features/ride/ride.api";
 
-export const useDriverIncomingRequestSocket = ({
-  enabled = true,
-  onNewRide,
-  activeRide,
-  onActiveRideUpdate,
-  rideCancelledBeforeDriverAcceptance,
-}: {
-  enabled?: boolean;
-  onNewRide?: (payload: Ride) => void;
-  activeRide?: Ride | null;
-  onActiveRideUpdate?: (payload: Ride) => void;
-  rideCancelledBeforeDriverAcceptance?: (payload: { rideId: string }) => void;
-}) => {
+interface UseDriverIncomingRequestSocketReturn {
+  incomingRides: Ride[];
+  activeRide: Ride | null;
+  isConnected: boolean;
+  isLoading: boolean;
+}
+
+let globalListenersRegistered = false;
+
+/**
+ * ✅ Custom hook for managing incoming ride requests and socket events
+ * No callbacks needed - just call it and use the returned state!
+ */
+export const useDriverIncomingRequestSocket = (enabled: boolean = true): UseDriverIncomingRequestSocketReturn => {
   const dispatch = useDispatch();
-  const currentRoomId = useRef<string | null>(null);
-  const subscribedToNewRide = useRef(false);
-  const subscribedToRideCancelled = useRef(false);
-  const subscribedToRideUpdate = useRef(false);
-  const hasJoinedRoom = useRef(false); // ✅ NEW: Track if already joined
 
+  // ✅ Get Redux state
+  const incomingRequestsRedux = useSelector((state: any) => state.incomingRequests);
+  const activeRideRedux = useSelector((state: any) => state.activeRide);
+
+  // ✅ Track socket connection
+  const socketRef = useRef<any>(null);
+  const currentRoomId = useRef<string | null>(null);
+  const hasJoinedRoom = useRef(false);
+
+  // ✅ Register global socket listeners ONCE
   useEffect(() => {
+    if (globalListenersRegistered) {
+      console.log("✅ Global socket listeners already registered");
+      return;
+    }
+
     const socket = getSocket();
+    if (!socket) {
+      console.warn("⚠️ Socket not available");
+      return;
+    }
+
+    socketRef.current = socket;
+    globalListenersRegistered = true;
+    console.log("📡 Registering global socket listeners...");
+
+    // ✅ NEW RIDE REQUEST
+    socket.on("new_ride_request", (payload: Ride) => {
+      console.log("🎯 new_ride_request received:", payload._id);
+      dispatch(addIncomingRequest(payload));
+      // ✅ Invalidate RTK Query cache to sync with backend
+      dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
+    });
+
+    // ✅ RIDE CANCELLED BEFORE ACCEPTANCE
+    socket.on("ride_cancelled_before_acceptance", (payload: { rideId: string }) => {
+      console.log("🚫 Ride cancelled before driver acceptance:", payload.rideId);
+      dispatch(removeIncomingRequest(payload.rideId));
+      dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
+    });
+
+    // ✅ RIDE CANCELLED (old event name)
+    socket.on("ride_cancelled", (payload: { rideId: string }) => {
+      console.log("🚫 ride_cancelled received:", payload.rideId);
+      dispatch(removeIncomingRequest(payload.rideId));
+      dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
+    });
+
+    // ✅ RIDE STATUS UPDATED - MOST IMPORTANT
+    socket.on("ride_update", (payload: Ride) => {
+      console.log("🔄 ride_update received - Status:", payload.status, "Ride:", payload._id);
+
+      const isCancelled = payload.status?.toUpperCase().includes("CANCELLED");
+      const isCompleted = payload.status === "COMPLETED";
+
+      // ✅ RIDE COMPLETED - Clear EVERYTHING
+      if (isCompleted) {
+        console.log("✅✅✅ RIDE COMPLETED - CLEARING ALL ✅✅✅");
+        dispatch(clearActiveRide());
+        dispatch(clearIncomingRequests());
+        dispatch(
+          rideApi.util.invalidateTags(["INCOMING_RIDES", "ACTIVE_RIDE", "RIDE", "RIDE_STATS"])
+        );
+
+        if (currentRoomId.current) {
+          socket.emit("leave_ride_room", { rideId: currentRoomId.current });
+          console.log("🚪 Left ride room after completion:", currentRoomId.current);
+          currentRoomId.current = null;
+          hasJoinedRoom.current = false;
+        }
+      }
+      // ✅ RIDE CANCELLED - Clear active ride and incoming
+      else if (isCancelled) {
+        console.log("❌ RIDE CANCELLED - CLEARING ALL ❌");
+        dispatch(clearActiveRide());
+        dispatch(clearIncomingRequests());
+        dispatch(
+          rideApi.util.invalidateTags(["INCOMING_RIDES", "ACTIVE_RIDE", "RIDE"])
+        );
+
+        if (currentRoomId.current) {
+          socket.emit("leave_ride_room", { rideId: currentRoomId.current });
+          console.log("🚪 Left ride room after cancellation:", currentRoomId.current);
+          currentRoomId.current = null;
+          hasJoinedRoom.current = false;
+        }
+      }
+      // ✅ IN PROGRESS RIDE - Update active ride only
+      else {
+        console.log("🔄 Ride in progress - updating status:", payload.status);
+        dispatch(setActiveRide(payload));
+      }
+    });
+
+    // ✅ CONNECTION EVENTS
+    socket.on("connect", () => {
+      console.log("✅ Socket connected:", socket.id);
+      dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES", "ACTIVE_RIDE"]));
+    });
+
+    socket.on("disconnect", () => {
+      console.log("❌ Socket disconnected");
+      currentRoomId.current = null;
+      hasJoinedRoom.current = false;
+    });
+
+    console.log("✅ Global socket listeners registered successfully");
+
+    return () => {
+      console.log("🧹 Component unmounted but keeping socket listeners alive");
+    };
+  }, [dispatch]);
+
+  // ✅ Handle room joins/leaves based on active ride state
+  useEffect(() => {
+    const socket = socketRef.current || getSocket();
+    if (!socket) return;
 
     if (!enabled) {
-      console.log("🔌 Socket disabled, cleaning up...");
+      console.log("🔌 Socket disabled, leaving room...");
       if (currentRoomId.current) {
         socket.emit("leave_ride_room", { rideId: currentRoomId.current });
+        console.log("🚪 Left room (disabled):", currentRoomId.current);
         currentRoomId.current = null;
-        hasJoinedRoom.current = false; // ✅ Reset flag
-      }
-      if (subscribedToRideUpdate.current) {
-        socket.off("ride_update");
-        subscribedToRideUpdate.current = false;
-      }
-      if (subscribedToRideCancelled.current) {
-        socket.off("ride_cancelled");
-        subscribedToRideCancelled.current = false;
-      }
-      if (subscribedToNewRide.current) {
-        socket.off("new_ride_request");
-        subscribedToNewRide.current = false;
+        hasJoinedRoom.current = false;
       }
       return;
     }
 
-    // ✅ FIXED: Only join room once, don't join on every prop change
+    const activeRide = activeRideRedux?.ride;
     const isCancelled = activeRide?.status?.toUpperCase().includes("CANCELLED");
     const isCompleted = activeRide?.status === "COMPLETED";
     const canJoin = !!activeRide && !!activeRide._id && !isCancelled && !isCompleted;
 
     if (canJoin && !hasJoinedRoom.current) {
-      // ✅ Only join if NOT already joined
       const nextRoomId = activeRide._id;
 
       if (currentRoomId.current && currentRoomId.current !== nextRoomId) {
         socket.emit("leave_ride_room", { rideId: currentRoomId.current });
-        console.log("🚪 leaving old room", currentRoomId.current);
+        console.log("🚪 Left old room (switching rides):", currentRoomId.current);
       }
 
       socket.emit("join_ride_room", { rideId: nextRoomId });
-      console.log("🚪 joining ride room", nextRoomId);
+      console.log("🚪 Joined ride room:", nextRoomId);
       currentRoomId.current = nextRoomId;
-      hasJoinedRoom.current = true; // ✅ Set flag after joining
-    } else if (canJoin && hasJoinedRoom.current) {
-      // ✅ Already joined, don't join again
-      console.log("📡 Already joined room", currentRoomId.current);
-    } else if (!canJoin && hasJoinedRoom.current) {
-      // ✅ Ride cancelled/completed, leave room and reset flag
-      if (currentRoomId.current) {
-        socket.emit("leave_ride_room", { rideId: currentRoomId.current });
-        console.log("🚪 leaving room (ride ended)", currentRoomId.current);
-        currentRoomId.current = null;
-        hasJoinedRoom.current = false; // ✅ Reset flag
-      }
+      hasJoinedRoom.current = true;
+    } else if (!canJoin && hasJoinedRoom.current && currentRoomId.current) {
+      socket.emit("leave_ride_room", { rideId: currentRoomId.current });
+      console.log("🚪 Left ride room (cancelled/completed):", currentRoomId.current);
+      currentRoomId.current = null;
+      hasJoinedRoom.current = false;
     }
+  }, [enabled, activeRideRedux?.ride?._id, activeRideRedux?.ride?.status]);
 
-    // Subscribe to new_ride_request (once)
-    if (!subscribedToNewRide.current) {
-      socket.off("new_ride_request");
-      socket.on("new_ride_request", (payload: Ride) => {
-        console.log("✅ new_ride_request received", payload);
-        dispatch(addIncomingRequest(payload));
-        onNewRide?.(payload);
-      });
-      subscribedToNewRide.current = true;
-      console.log("📌 Subscribed to new_ride_request");
-    }
-
-    // Subscribe to ride_cancelled (once)
-    if (!subscribedToRideCancelled.current) {
-      socket.off("ride_cancelled");
-      socket.on("ride_cancelled", (payload: { rideId: string }) => {
-        console.log("🚫 ride_cancelled received", payload);
-        dispatch(removeIncomingRequest(payload.rideId));
-        rideCancelledBeforeDriverAcceptance?.(payload);
-      });
-      subscribedToRideCancelled.current = true;
-      console.log("📌 Subscribed to ride_cancelled");
-    }
-
-    // Subscribe to ride_update (once)
-    if (!subscribedToRideUpdate.current) {
-      socket.off("ride_update");
-      socket.on("ride_update", (payload: Ride) => {
-        console.log("📡 ride_update received", payload);
-        
-        const isCancelledUpdate = !!payload.status && payload.status.toUpperCase().includes("CANCELLED");
-        const isCompletedUpdate = payload.status === "COMPLETED";
-
-        if (isCancelledUpdate || isCompletedUpdate) {
-          if (currentRoomId.current) {
-            socket.emit("leave_ride_room", { rideId: currentRoomId.current });
-            console.log(`🚪 leaving room (${payload.status})`, currentRoomId.current);
-            currentRoomId.current = null;
-            hasJoinedRoom.current = false; 
-          }
-        }
-
-        dispatch(setActiveRide(payload));
-        onActiveRideUpdate?.(payload);
-      });
-      subscribedToRideUpdate.current = true;
-      console.log("📌 Subscribed to ride_update");
-    }
-
-    return () => {
-      // Keep listeners alive for this component lifecycle
-    };
-  }, [enabled, activeRide?._id, activeRide?.status, onNewRide, onActiveRideUpdate, dispatch, rideCancelledBeforeDriverAcceptance]);
+  return {
+    incomingRides: incomingRequestsRedux?.requests || [],
+    activeRide: activeRideRedux?.ride || null,
+    isConnected: socketRef.current?.connected || false,
+    isLoading: incomingRequestsRedux?.isLoading || false,
+  };
 };

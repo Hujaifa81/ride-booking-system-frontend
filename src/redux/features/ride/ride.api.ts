@@ -1,7 +1,6 @@
 import { baseApi } from "@/redux/baseApi";
 import type { IFareRequest, IFareResponse, IResponse, ITotalRidesCount, Ride } from "@/types";
 
-
 export const rideApi = baseApi.injectEndpoints({
     endpoints: (builder) => ({
         requestRide: builder.mutation({
@@ -18,7 +17,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: "/ride/active-ride",
                 method: "GET",
             }),
-            providesTags: ["RIDE"],
+            providesTags: ["ACTIVE_RIDE"],
         }),
 
         cancelRide: builder.mutation({
@@ -27,7 +26,7 @@ export const rideApi = baseApi.injectEndpoints({
                 method: "PATCH",
                 data: { canceledReason },
             }),
-            invalidatesTags: ["RIDE", "RIDE_STATS"],
+            invalidatesTags: ["ACTIVE_RIDE", "RIDE_STATS","RIDE"],
         }),
 
         getApproximateFare: builder.query<IResponse<IFareResponse>, IFareRequest>({
@@ -68,7 +67,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/incoming-requests`,
                 method: "GET",
             }),
-            providesTags: ["RIDE"],
+            providesTags: ["INCOMING_RIDES",],
         }),
 
         acceptRide: builder.mutation<IResponse<Ride>, string>({
@@ -76,7 +75,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/accept/${rideId}`,
                 method: "PATCH",
             }),
-            invalidatesTags: ["RIDE"],
+            invalidatesTags: ["RIDE", "INCOMING_RIDES", "ACTIVE_RIDE"],
         }),
 
         rejectRide: builder.mutation<IResponse<Ride>, string>({
@@ -84,7 +83,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/reject/${rideId}`,
                 method: "PATCH",
             }),
-            invalidatesTags: ["RIDE"],
+            invalidatesTags: ["RIDE", "INCOMING_RIDES"],
         }),
 
         updateRideStatusAfterAccepted:builder.mutation<IResponse<Ride>, { rideId: string; status: string }>({
@@ -93,7 +92,7 @@ export const rideApi = baseApi.injectEndpoints({
                 method: "PATCH",
                 data: { status },
             }),
-            invalidatesTags: ["RIDE"],
+            invalidatesTags: ["RIDE","ACTIVE_RIDE"],
         }),
     })
 });

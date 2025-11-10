@@ -8,8 +8,15 @@ import {
 import { Outlet } from "react-router";
 import { Bell, User } from "lucide-react";
 import { AppSidebar } from "../shared/AppSidebar";
+import { useGlobalDriverSocket } from "@/hooks/useGlobalDriverSocket";
 
 export default function DashboardLayout() {
+  
+  
+  
+    useGlobalDriverSocket();
+  
+  
   return (
     <SidebarProvider>
       {/* Sidebar */}
