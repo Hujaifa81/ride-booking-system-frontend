@@ -17,7 +17,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: "/ride/active-ride",
                 method: "GET",
             }),
-            providesTags: ["ACTIVE_RIDE"],
+            providesTags: ["ACTIVE_RIDE", "RIDE"],
         }),
 
         cancelRide: builder.mutation({
@@ -67,7 +67,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/incoming-requests`,
                 method: "GET",
             }),
-            providesTags: ["INCOMING_RIDES",],
+            providesTags: ["INCOMING_RIDES"],
         }),
 
         acceptRide: builder.mutation<IResponse<Ride>, string>({

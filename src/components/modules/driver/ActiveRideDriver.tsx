@@ -21,7 +21,6 @@ import {
   MessageCircle,
   Copy,
 } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -126,7 +125,7 @@ const ActiveRideDriver = () => {
   const reduxActiveRide = useSelector((state: any) => state?.activeRide?.ride || null);
 
   // ✅ Use API data as primary, fallback to Redux
-  const activeRide = activeRideData?.data || reduxActiveRide || null;
+  const activeRide = activeRideData?.data
 
   // ✅ Mutations
   const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] =
@@ -183,32 +182,41 @@ const ActiveRideDriver = () => {
           socket.emit("leave_ride_room", { rideId: ride._id });
           console.log("🚪 [STATUS] Emitted leave_ride_room for completed ride:", ride._id);
 
-          // ✅ Clear Redux state FIRST
+          // ✅ Step 1: Clear Redux state immediately
           dispatch(clearActiveRide());
           dispatch(clearIncomingRequests());
           console.log("🟪 [STATUS] Redux cleared");
 
-          // ✅ Invalidate cache tags
-          dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE"]));
-          console.log("🟪 [STATUS] Invalidated ACTIVE_RIDE tag");
+          // ✅ Step 2: Invalidate ALL ride-related cache
+          dispatch(rideApi.util.resetApiState());
+          console.log("🟪 [STATUS] Reset entire API state");
 
-          dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
-          console.log("🟪 [STATUS] Invalidated INCOMING_RIDES tag");
+          // ✅ Step 3: Wait for state to settle
+          await new Promise(resolve => setTimeout(resolve, 100));
 
-          // ✅ Refetch to ensure API is empty
-          await refetch();
-          console.log("🟪 [STATUS] Refetched active ride");
+          // ✅ Step 4: Refetch - this will now get fresh data from server
+          const refetchResult = await refetch();
+          console.log("🟪 [STATUS] Refetch result:", refetchResult);
 
+          // ✅ Step 5: Check if data is actually null now
+          if (!refetchResult.data?.data) {
+            console.log("🟪 [STATUS] ✅ API confirmed no active ride");
+          } else {
+            console.warn("🟪 [STATUS] ⚠️ API still has ride data:", refetchResult.data?.data);
+          }
+
+  
           toast.success("Ride completed! ✅");
         } else {
           console.log("🔄 [STATUS] Status updated to:", nextStatus);
 
-          // ✅ Invalidate cache for status updates
+          // ✅ Invalidate only ACTIVE_RIDE tag for intermediate updates
           dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE"]));
           console.log("🔄 [STATUS] Invalidated ACTIVE_RIDE tag");
 
-          // ✅ Refetch to get updated data
+          await new Promise(resolve => setTimeout(resolve, 100));
           await refetch();
+          console.log("🔄 [STATUS] Refetched active ride");
 
           toast.success(`Status updated to ${getStatusLabel(nextStatus)}`);
         }
@@ -219,6 +227,8 @@ const ActiveRideDriver = () => {
     },
     [statusUpdateAfterAccepted, dispatch, refetch]
   );
+
+
 
   // ✅ Cancel ride
   const handleCancelRide = useCallback(async () => {
@@ -311,13 +321,12 @@ const ActiveRideDriver = () => {
             <div className="space-y-1">
               <div className="flex items-center gap-3">
                 <div
-                  className={`w-12 h-12 bg-gradient-to-br rounded-xl flex items-center justify-center shadow-lg ${
-                    activeRide.status === "IN_TRANSIT"
+                  className={`w-12 h-12 bg-gradient-to-br rounded-xl flex items-center justify-center shadow-lg ${activeRide.status === "IN_TRANSIT"
                       ? "from-emerald-500 to-emerald-600"
                       : activeRide.status === "REACHED_DESTINATION"
-                      ? "from-cyan-500 to-cyan-600"
-                      : "from-blue-500 to-purple-600"
-                  }`}
+                        ? "from-cyan-500 to-cyan-600"
+                        : "from-blue-500 to-purple-600"
+                    }`}
                 >
                   <Navigation className="w-6 h-6 text-white" />
                 </div>
@@ -352,9 +361,8 @@ const ActiveRideDriver = () => {
                     Route Details
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-blue-300 transition-transform duration-300 ${
-                      expandedSection === "route" ? "rotate-180" : ""
-                    }`}
+                    className={`w-5 h-5 text-blue-300 transition-transform duration-300 ${expandedSection === "route" ? "rotate-180" : ""
+                      }`}
                   />
                 </div>
               </div>
@@ -438,9 +446,8 @@ const ActiveRideDriver = () => {
                     Passenger Details
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-purple-300 transition-transform duration-300 ${
-                      expandedSection === "passenger" ? "rotate-180" : ""
-                    }`}
+                    className={`w-5 h-5 text-purple-300 transition-transform duration-300 ${expandedSection === "passenger" ? "rotate-180" : ""
+                      }`}
                   />
                 </div>
               </div>
@@ -487,9 +494,8 @@ const ActiveRideDriver = () => {
                     Route Map
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-emerald-300 transition-transform duration-300 ${
-                      expandedSection === "map" ? "rotate-180" : ""
-                    }`}
+                    className={`w-5 h-5 text-emerald-300 transition-transform duration-300 ${expandedSection === "map" ? "rotate-180" : ""
+                      }`}
                   />
                 </div>
               </div>
@@ -550,7 +556,12 @@ const ActiveRideDriver = () => {
 
                   <Button
                     className="w-full h-12 gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={() => handleStatusChange(activeRide, nextStatus)}
+                    onClick={() => {
+                      if (activeRide) {
+                        console.log("🔵 [CLICK] Button clicked with current ride:", activeRide._id, "Status:", activeRide.status);
+                        handleStatusChange(activeRide, nextStatus);
+                      }
+                    }}
                     disabled={isStatusChanging}
                   >
                     {isStatusChanging ? (

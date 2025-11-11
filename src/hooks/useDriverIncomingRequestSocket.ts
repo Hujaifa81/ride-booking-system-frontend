@@ -83,6 +83,8 @@ export const useDriverIncomingRequestSocket = (enabled: boolean = true): UseDriv
       const isCancelled = payload.status?.toUpperCase().includes("CANCELLED");
       const isCompleted = payload.status === "COMPLETED";
 
+      console.log("From hook",payload);
+
       // ✅ RIDE COMPLETED - Clear EVERYTHING
       if (isCompleted) {
         console.log("✅✅✅ RIDE COMPLETED - CLEARING ALL ✅✅✅");

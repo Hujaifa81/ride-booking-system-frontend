@@ -108,7 +108,6 @@ const DriverDashboard = () => {
 
   // ✅ Get data from Redux (populated by global socket listener)
   const incomingRidesRedux = useSelector((state: any) => state?.requests || []);
-  const isSocketConnected = useSelector((state: any) => state?.socketConnected || false);
   // ✅ Local state to track if ride is completed (permanently disable polling)
   const [isRideCompleted, setIsRideCompleted] = useState(false);
   // ✅ Track completed ride ID to prevent stale data re-sync
@@ -171,8 +170,6 @@ const DriverDashboard = () => {
     if (!activeRide) {
       return null;
     }
-
-
     // ✅ NEVER show completed rides
     if (activeRide.status === "COMPLETED") {
       return null;
@@ -349,7 +346,8 @@ const DriverDashboard = () => {
           dispatch(clearIncomingRequests());
 
 
-          dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE", "INCOMING_RIDES"]));
+          dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE", "INCOMING_RIDES", "RIDE"]));
+          await refetchActiveRide();
 
           toast.success("Ride completed! ✅");
 
@@ -405,23 +403,11 @@ const DriverDashboard = () => {
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold text-slate-900">Driver Dashboard</h1>
           <p className="text-sm text-slate-500">Monitor rides, earnings, and performance</p>
-          {/* DEBUG: Show internal state */}
-          <div className="text-xs text-slate-500 mt-2 font-mono bg-slate-100 p-2 rounded">
-            <div>isRideCompleted: {String(isRideCompleted)}</div>
-            <div>completedRideId: {completedRideId || "null"}</div>
-            <div>activeRide (API): {activeRide?.status || "null"}</div>
-            <div>displayActiveRide: {displayActiveRide ? "visible" : "hidden"}</div>
-            <div>querySkipped: {isRideCompleted ? "yes" : "no"}</div>
-          </div>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
           {statusBadge()}
 
-          {/* ✅ Connection status */}
-          <div className="flex items-center gap-1.5 text-xs px-2 py-1.5 bg-slate-100 rounded-lg">
-            <div className={`w-2 h-2 rounded-full ${isSocketConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
-            <span className="text-slate-600">{isSocketConnected ? "✅ Connected" : "⚠️ Connecting..."}</span>
-          </div>
+          
 
           <Button
             variant={isAvailable ? "outline" : isOnTrip ? "secondary" : "default"}
