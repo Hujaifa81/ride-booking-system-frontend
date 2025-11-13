@@ -84,17 +84,17 @@ const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng
 const getStatusBadgeColor = (status: string) => {
   switch (status) {
     case "ACCEPTED":
-      return "bg-blue-500/20 text-blue-300 border-blue-500/50";
+      return "bg-blue-100 text-blue-700 border-blue-300";
     case "GOING_TO_PICK_UP":
-      return "bg-purple-500/20 text-purple-300 border-purple-500/50";
+      return "bg-purple-100 text-purple-700 border-purple-300";
     case "DRIVER_ARRIVED":
-      return "bg-amber-500/20 text-amber-300 border-amber-500/50";
+      return "bg-amber-100 text-amber-700 border-amber-300";
     case "IN_TRANSIT":
-      return "bg-emerald-500/20 text-emerald-300 border-emerald-500/50";
+      return "bg-emerald-100 text-emerald-700 border-emerald-300";
     case "REACHED_DESTINATION":
-      return "bg-cyan-500/20 text-cyan-300 border-cyan-500/50";
+      return "bg-cyan-100 text-cyan-700 border-cyan-300";
     default:
-      return "bg-slate-500/20 text-slate-300 border-slate-500/50";
+      return "bg-gray-100 text-gray-700 border-gray-300";
   }
 };
 
@@ -274,19 +274,19 @@ const ActiveRideDriver = () => {
   // ✅ If no active ride, show empty state
   if (!activeRide || isActiveRideLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-indigo-50 flex items-center justify-center">
         <div className="text-center space-y-4">
-          <div className="w-24 h-24 bg-slate-700/50 rounded-full flex items-center justify-center mx-auto">
+          <div className="w-24 h-24 bg-blue-100 rounded-full flex items-center justify-center mx-auto">
             {isActiveRideLoading ? (
-              <Loader2 className="w-12 h-12 text-slate-400 animate-spin" />
+              <Loader2 className="w-12 h-12 text-blue-600 animate-spin" />
             ) : (
-              <AlertCircle className="w-12 h-12 text-slate-500 animate-pulse" />
+              <AlertCircle className="w-12 h-12 text-blue-500 animate-pulse" />
             )}
           </div>
-          <h2 className="text-2xl font-bold text-white">
+          <h2 className="text-2xl font-bold text-gray-900">
             {isActiveRideLoading ? "Loading Ride..." : "No Active Ride"}
           </h2>
-          <p className="text-slate-400">
+          <p className="text-gray-600">
             {isActiveRideLoading ? "Please wait..." : "Accept a ride request to get started"}
           </p>
         </div>
@@ -307,15 +307,15 @@ const ActiveRideDriver = () => {
   const dropoffCoords = toLeaflet(activeRide.dropOffLocation?.coordinates);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+    <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-indigo-50">
       {/* Animated background */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl animate-pulse" />
-        <div className="absolute bottom-20 right-10 w-72 h-72 bg-purple-500/10 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-200/30 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-20 right-10 w-72 h-72 bg-purple-200/30 rounded-full blur-3xl animate-pulse" />
       </div>
 
       {/* Sticky Header */}
-      <div className="sticky top-0 z-40 backdrop-blur-xl bg-slate-900/80 border-b border-slate-700/50">
+      <div className="sticky top-0 z-40 backdrop-blur-xl bg-white/80 border-b border-gray-200 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="space-y-1">
@@ -331,8 +331,8 @@ const ActiveRideDriver = () => {
                   <Navigation className="w-6 h-6 text-white" />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold text-white">Active Ride</h1>
-                  <p className="text-sm text-slate-400">{getStatusLabel(activeRide.status)}</p>
+                  <h1 className="text-3xl font-bold text-gray-900">Active Ride</h1>
+                  <p className="text-sm text-gray-600">{getStatusLabel(activeRide.status)}</p>
                 </div>
               </div>
             </div>
@@ -350,82 +350,82 @@ const ActiveRideDriver = () => {
           {/* Left Column - Ride Details */}
           <div className="lg:col-span-2 space-y-6">
             {/* Route Card */}
-            <div className="group relative bg-gradient-to-br from-blue-600/30 to-blue-700/30 border border-blue-500/50 rounded-2xl overflow-hidden backdrop-blur-md hover:border-blue-500/70 transition-all duration-300">
+            <div className="group relative bg-white border border-blue-200 rounded-2xl overflow-hidden shadow-md hover:shadow-lg hover:border-blue-300 transition-all duration-300">
               <div
-                className="p-6 cursor-pointer"
+                className="p-6 cursor-pointer bg-gradient-to-r from-blue-50 to-indigo-50"
                 onClick={() => setExpandedSection(expandedSection === "route" ? null : "route")}
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                    <MapPin className="w-6 h-6 text-blue-300" />
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                    <MapPin className="w-6 h-6 text-blue-600" />
                     Route Details
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-blue-300 transition-transform duration-300 ${expandedSection === "route" ? "rotate-180" : ""
+                    className={`w-5 h-5 text-blue-600 transition-transform duration-300 ${expandedSection === "route" ? "rotate-180" : ""
                       }`}
                   />
                 </div>
               </div>
 
               {expandedSection === "route" && (
-                <div className="px-6 pb-6 border-t border-blue-500/30 space-y-6">
+                <div className="px-6 pb-6 border-t border-blue-200 space-y-6 bg-white">
                   {/* Route visualization */}
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-4 pt-6">
                     <div className="flex flex-col items-center gap-2 pt-2">
-                      <div className="w-4 h-4 rounded-full bg-gradient-to-r from-blue-400 to-blue-500 shadow-lg shadow-blue-500/50" />
-                      <div className="w-1 h-24 bg-gradient-to-b from-blue-500/50 via-purple-500/30 to-rose-500/50" />
-                      <div className="w-4 h-4 rounded-full bg-gradient-to-r from-rose-400 to-rose-500 shadow-lg shadow-rose-500/50" />
+                      <div className="w-4 h-4 rounded-full bg-gradient-to-r from-blue-500 to-blue-600 shadow-lg shadow-blue-500/50" />
+                      <div className="w-1 h-24 bg-gradient-to-b from-blue-400 via-purple-400 to-rose-400" />
+                      <div className="w-4 h-4 rounded-full bg-gradient-to-r from-rose-500 to-rose-600 shadow-lg shadow-rose-500/50" />
                     </div>
 
                     <div className="flex-1 space-y-8 min-w-0">
                       {/* Pickup */}
                       <div className="space-y-2">
-                        <p className="text-xs text-blue-300 font-bold uppercase tracking-wide">Pickup Location</p>
-                        <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl p-4">
-                          <p className="font-semibold text-white break-words">{pickup}</p>
-                          <p className="text-sm text-slate-400 mt-1">📍 Pick up your passenger here</p>
+                        <p className="text-xs text-blue-700 font-bold uppercase tracking-wide">Pickup Location</p>
+                        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+                          <p className="font-semibold text-gray-900 break-words">{pickup}</p>
+                          <p className="text-sm text-gray-600 mt-1">📍 Pick up your passenger here</p>
                         </div>
                       </div>
 
                       {/* Dropoff */}
                       <div className="space-y-2">
-                        <p className="text-xs text-rose-300 font-bold uppercase tracking-wide">Dropoff Location</p>
-                        <div className="bg-rose-500/20 border border-rose-500/30 rounded-xl p-4">
-                          <p className="font-semibold text-white break-words">{dropoff}</p>
-                          <p className="text-sm text-slate-400 mt-1">🏁 Drop off your passenger here</p>
+                        <p className="text-xs text-rose-700 font-bold uppercase tracking-wide">Dropoff Location</p>
+                        <div className="bg-rose-50 border border-rose-200 rounded-xl p-4">
+                          <p className="font-semibold text-gray-900 break-words">{dropoff}</p>
+                          <p className="text-sm text-gray-600 mt-1">🏁 Drop off your passenger here</p>
                         </div>
                       </div>
                     </div>
                   </div>
 
                   {/* Trip Stats */}
-                  <div className="grid grid-cols-3 gap-3 pt-4 border-t border-blue-500/30">
+                  <div className="grid grid-cols-3 gap-3 pt-4 border-t border-gray-200">
                     {typeof activeRide.estimatedDuration === "number" && (
-                      <div className="bg-blue-500/20 border border-blue-500/30 rounded-xl p-4 text-center hover:bg-blue-500/30 transition-colors">
-                        <p className="text-slate-400 text-xs font-semibold mb-2">ETA</p>
+                      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center hover:bg-blue-100 transition-colors">
+                        <p className="text-gray-600 text-xs font-semibold mb-2">ETA</p>
                         <div className="flex items-center justify-center gap-2">
-                          <Clock className="w-4 h-4 text-blue-300" />
-                          <p className="text-2xl font-bold text-blue-300">{activeRide.estimatedDuration}m</p>
+                          <Clock className="w-4 h-4 text-blue-600" />
+                          <p className="text-2xl font-bold text-blue-700">{activeRide.estimatedDuration}m</p>
                         </div>
                       </div>
                     )}
 
                     {typeof activeRide.distance === "number" && (
-                      <div className="bg-purple-500/20 border border-purple-500/30 rounded-xl p-4 text-center hover:bg-purple-500/30 transition-colors">
-                        <p className="text-slate-400 text-xs font-semibold mb-2">DISTANCE</p>
+                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center hover:bg-purple-100 transition-colors">
+                        <p className="text-gray-600 text-xs font-semibold mb-2">DISTANCE</p>
                         <div className="flex items-center justify-center gap-2">
-                          <TrendingUp className="w-4 h-4 text-purple-300" />
-                          <p className="text-2xl font-bold text-purple-300">{activeRide.distance.toFixed(1)}km</p>
+                          <TrendingUp className="w-4 h-4 text-purple-600" />
+                          <p className="text-2xl font-bold text-purple-700">{activeRide.distance.toFixed(1)}km</p>
                         </div>
                       </div>
                     )}
 
                     {typeof activeRide.approxFare === "number" && (
-                      <div className="bg-emerald-500/20 border border-emerald-500/30 rounded-xl p-4 text-center hover:bg-emerald-500/30 transition-colors">
-                        <p className="text-slate-400 text-xs font-semibold mb-2">FARE</p>
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-center hover:bg-emerald-100 transition-colors">
+                        <p className="text-gray-600 text-xs font-semibold mb-2">FARE</p>
                         <div className="flex items-center justify-center gap-2">
-                          <DollarSign className="w-4 h-4 text-emerald-300" />
-                          <p className="text-2xl font-bold text-emerald-300">${activeRide.approxFare.toFixed(2)}</p>
+                          <DollarSign className="w-4 h-4 text-emerald-600" />
+                          <p className="text-2xl font-bold text-emerald-700">${activeRide.approxFare.toFixed(2)}</p>
                         </div>
                       </div>
                     )}
@@ -435,40 +435,40 @@ const ActiveRideDriver = () => {
             </div>
 
             {/* Passenger Card */}
-            <div className="group relative bg-gradient-to-br from-purple-600/30 to-purple-700/30 border border-purple-500/50 rounded-2xl overflow-hidden backdrop-blur-md hover:border-purple-500/70 transition-all duration-300">
+            <div className="group relative bg-white border border-purple-200 rounded-2xl overflow-hidden shadow-md hover:shadow-lg hover:border-purple-300 transition-all duration-300">
               <div
-                className="p-6 cursor-pointer"
+                className="p-6 cursor-pointer bg-gradient-to-r from-purple-50 to-pink-50"
                 onClick={() => setExpandedSection(expandedSection === "passenger" ? null : "passenger")}
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                    <User className="w-6 h-6 text-purple-300" />
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                    <User className="w-6 h-6 text-purple-600" />
                     Passenger Details
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-purple-300 transition-transform duration-300 ${expandedSection === "passenger" ? "rotate-180" : ""
+                    className={`w-5 h-5 text-purple-600 transition-transform duration-300 ${expandedSection === "passenger" ? "rotate-180" : ""
                       }`}
                   />
                 </div>
               </div>
 
               {expandedSection === "passenger" && (
-                <div className="px-6 pb-6 border-t border-purple-500/30 space-y-4">
+                <div className="px-6 pb-6 border-t border-purple-200 space-y-4 bg-white pt-6">
                   <div className="flex items-center gap-4">
-                    <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg shadow-purple-500/50">
+                    <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
                       <User className="w-8 h-8 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h3 className="text-lg font-bold text-white">Passenger</h3>
+                      <h3 className="text-lg font-bold text-gray-900">Passenger</h3>
                       <div className="flex items-center gap-2 mt-1">
-                        <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
-                        <span className="text-sm text-yellow-300 font-semibold">4.92</span>
-                        <span className="text-xs text-slate-400">(127 rides)</span>
+                        <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                        <span className="text-sm text-yellow-700 font-semibold">4.92</span>
+                        <span className="text-xs text-gray-600">(127 rides)</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-3 pt-4 border-t border-purple-500/30">
+                  <div className="grid grid-cols-2 gap-3 pt-4 border-t border-purple-200">
                     <Button className="gap-2 h-10 bg-blue-600 hover:bg-blue-700 rounded-lg font-semibold transition-all duration-300">
                       <PhoneCall className="w-4 h-4" />
                       <span className="hidden sm:inline">Call</span>
@@ -483,26 +483,26 @@ const ActiveRideDriver = () => {
             </div>
 
             {/* Map Card */}
-            <div className="group relative bg-gradient-to-br from-emerald-600/30 to-emerald-700/30 border border-emerald-500/50 rounded-2xl overflow-hidden backdrop-blur-md hover:border-emerald-500/70 transition-all duration-300">
+            <div className="group relative bg-white border border-emerald-200 rounded-2xl overflow-hidden shadow-md hover:shadow-lg hover:border-emerald-300 transition-all duration-300">
               <div
-                className="p-6 cursor-pointer"
+                className="p-6 cursor-pointer bg-gradient-to-r from-emerald-50 to-teal-50"
                 onClick={() => setExpandedSection(expandedSection === "map" ? null : "map")}
               >
                 <div className="flex items-center justify-between">
-                  <h2 className="text-xl font-bold text-white flex items-center gap-3">
-                    <MapIcon className="w-6 h-6 text-emerald-300" />
+                  <h2 className="text-xl font-bold text-gray-900 flex items-center gap-3">
+                    <MapIcon className="w-6 h-6 text-emerald-600" />
                     Route Map
                   </h2>
                   <ChevronDown
-                    className={`w-5 h-5 text-emerald-300 transition-transform duration-300 ${expandedSection === "map" ? "rotate-180" : ""
+                    className={`w-5 h-5 text-emerald-600 transition-transform duration-300 ${expandedSection === "map" ? "rotate-180" : ""
                       }`}
                   />
                 </div>
               </div>
 
               {expandedSection === "map" && (
-                <div className="p-6 border-t border-emerald-500/30">
-                  <div className="h-80 rounded-xl overflow-hidden border border-emerald-500/30 shadow-lg">
+                <div className="p-6 border-t border-emerald-200 bg-white">
+                  <div className="h-80 rounded-xl overflow-hidden border border-emerald-200 shadow-lg">
                     <MapContainer key={mapKey} center={leafletCenter} zoom={13} style={{ height: "100%", width: "100%" }}>
                       <TileLayer
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a>'
@@ -513,7 +513,7 @@ const ActiveRideDriver = () => {
                           <Popup>
                             <div className="text-sm">
                               <div className="font-bold">📍 Pickup Location</div>
-                              <div className="text-xs text-slate-600">{pickup}</div>
+                              <div className="text-xs text-gray-600">{pickup}</div>
                             </div>
                           </Popup>
                         </Marker>
@@ -523,7 +523,7 @@ const ActiveRideDriver = () => {
                           <Popup>
                             <div className="text-sm">
                               <div className="font-bold">🏁 Dropoff Location</div>
-                              <div className="text-xs text-slate-600">{dropoff}</div>
+                              <div className="text-xs text-gray-600">{dropoff}</div>
                             </div>
                           </Popup>
                         </Marker>
@@ -538,24 +538,24 @@ const ActiveRideDriver = () => {
           {/* Right Column - Actions */}
           <div className="space-y-6">
             {/* Action Buttons */}
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 backdrop-blur-md space-y-4">
-              <h3 className="text-lg font-bold text-white">Next Action</h3>
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-md space-y-4">
+              <h3 className="text-lg font-bold text-gray-900">Next Action</h3>
 
               {nextStatus ? (
                 <>
-                  <div className="bg-slate-700/50 border border-slate-600 rounded-xl p-4 space-y-2">
-                    <p className="text-xs text-slate-400 font-semibold uppercase">Current Status</p>
+                  <div className="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+                    <p className="text-xs text-gray-600 font-semibold uppercase">Current Status</p>
                     <Badge className={`${getStatusBadgeColor(activeRide.status)} border w-full justify-center py-2`}>
                       {getStatusLabel(activeRide.status)}
                     </Badge>
                   </div>
 
                   <div className="flex justify-center py-2">
-                    <ArrowDown className="w-5 h-5 text-slate-500 animate-bounce" />
+                    <ArrowDown className="w-5 h-5 text-gray-400 animate-bounce" />
                   </div>
 
                   <Button
-                    className="w-full h-12 gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="w-full h-12 gap-2 bg-gradient-to-r from-emerald-600 to-emerald-700 hover:from-emerald-700 hover:to-emerald-800 text-white font-bold rounded-xl shadow-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={() => {
                       if (activeRide) {
                         console.log("🔵 [CLICK] Button clicked with current ride:", activeRide._id, "Status:", activeRide.status);
@@ -579,17 +579,17 @@ const ActiveRideDriver = () => {
                 </>
               ) : (
                 <div className="text-center py-6">
-                  <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3 animate-pulse" />
-                  <p className="text-emerald-300 font-semibold text-lg">Ride Completed! 🎉</p>
-                  <p className="text-slate-400 text-sm mt-2">Great job on completing the ride.</p>
+                  <CheckCircle2 className="w-12 h-12 text-emerald-600 mx-auto mb-3 animate-pulse" />
+                  <p className="text-emerald-700 font-semibold text-lg">Ride Completed! 🎉</p>
+                  <p className="text-gray-600 text-sm mt-2">Great job on completing the ride.</p>
                 </div>
               )}
             </div>
 
             {/* Communication Box */}
-            <div className="bg-gradient-to-br from-blue-600/30 to-blue-700/30 border border-blue-500/50 rounded-2xl p-6 backdrop-blur-md space-y-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <MessageCircle className="w-5 h-5 text-blue-300" />
+            <div className="bg-white border border-blue-200 rounded-2xl p-6 shadow-md space-y-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <MessageCircle className="w-5 h-5 text-blue-600" />
                 Quick Contact
               </h3>
 
@@ -598,7 +598,7 @@ const ActiveRideDriver = () => {
                   <PhoneCall className="w-5 h-5" />
                   Call Passenger
                 </Button>
-                <Button variant="outline" className="w-full h-11 gap-2 border-slate-600 text-white hover:bg-slate-700/50 rounded-xl font-semibold transition-all duration-300">
+                <Button variant="outline" className="w-full h-11 gap-2 border-gray-300 text-gray-900 hover:bg-gray-50 rounded-xl font-semibold transition-all duration-300">
                   <MessageCircle className="w-5 h-5" />
                   Message Passenger
                 </Button>
@@ -606,23 +606,23 @@ const ActiveRideDriver = () => {
             </div>
 
             {/* Ride Info Box */}
-            <div className="bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 rounded-2xl p-6 backdrop-blur-md space-y-4">
-              <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                <Info className="w-5 h-5 text-slate-300" />
+            <div className="bg-white border border-gray-200 rounded-2xl p-6 shadow-md space-y-4">
+              <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <Info className="w-5 h-5 text-gray-600" />
                 Ride Info
               </h3>
 
               <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700/70 transition-colors">
-                  <span className="text-slate-400">Ride ID</span>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <span className="text-gray-600">Ride ID</span>
                   <div className="flex items-center gap-2">
-                    <code className="text-slate-200 font-mono text-xs">{activeRide._id.slice(0, 8)}...</code>
+                    <code className="text-gray-900 font-mono text-xs">{activeRide._id.slice(0, 8)}...</code>
                     <button
                       onClick={() => {
                         navigator.clipboard.writeText(activeRide._id);
                         toast.success("Ride ID copied!");
                       }}
-                      className="text-slate-400 hover:text-white transition-colors"
+                      className="text-gray-600 hover:text-gray-900 transition-colors"
                       title="Copy Ride ID"
                     >
                       <Copy className="w-4 h-4" />
@@ -630,9 +630,9 @@ const ActiveRideDriver = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between p-3 bg-slate-700/50 rounded-lg hover:bg-slate-700/70 transition-colors">
-                  <span className="text-slate-400">Status</span>
-                  <span className="text-white font-semibold text-xs uppercase">{activeRide.status}</span>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                  <span className="text-gray-600">Status</span>
+                  <span className="text-gray-900 font-semibold text-xs uppercase">{activeRide.status}</span>
                 </div>
               </div>
             </div>
@@ -646,16 +646,16 @@ const ActiveRideDriver = () => {
                     Cancel Ride
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="bg-slate-900 border-slate-700">
+                <AlertDialogContent className="bg-white border-gray-300">
                   <AlertDialogHeader>
-                    <AlertDialogTitle className="text-white">Cancel This Ride?</AlertDialogTitle>
-                    <AlertDialogDescription className="text-slate-400">
+                    <AlertDialogTitle className="text-gray-900">Cancel This Ride?</AlertDialogTitle>
+                    <AlertDialogDescription className="text-gray-600">
                       Are you sure you want to cancel? This action cannot be undone and may affect your rating.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <div className="space-y-4 py-4">
                     <div className="space-y-2">
-                      <Label htmlFor="cancel-reason" className="text-white text-sm font-semibold">
+                      <Label htmlFor="cancel-reason" className="text-gray-900 text-sm font-semibold">
                         Reason for cancellation (optional)
                       </Label>
                       <Input
@@ -664,13 +664,13 @@ const ActiveRideDriver = () => {
                         value={cancelReason}
                         onChange={(e) => setCancelReason(e.target.value)}
                         maxLength={200}
-                        className="bg-slate-800 border-slate-700 text-white placeholder:text-slate-500 rounded-lg focus:border-red-500 focus:ring-red-500/20"
+                        className="bg-gray-50 border-gray-300 text-gray-900 placeholder:text-gray-500 rounded-lg focus:border-red-500 focus:ring-red-500/20"
                       />
-                      <p className="text-xs text-slate-500">{cancelReason.length}/200 characters</p>
+                      <p className="text-xs text-gray-500">{cancelReason.length}/200 characters</p>
                     </div>
                   </div>
                   <AlertDialogFooter>
-                    <AlertDialogCancel className="border-slate-600 text-white hover:bg-slate-800 hover:text-white">
+                    <AlertDialogCancel className="border-gray-300 text-gray-900 hover:bg-gray-50">
                       Keep Ride
                     </AlertDialogCancel>
                     <AlertDialogAction
@@ -693,7 +693,7 @@ const ActiveRideDriver = () => {
             )}
 
             {/* Navigation Button */}
-            <Button className="w-full h-12 gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 transition-all duration-300">
+            <Button className="w-full h-12 gap-2 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl shadow-lg transition-all duration-300">
               <Navigation className="w-5 h-5" />
               Start Navigation
             </Button>

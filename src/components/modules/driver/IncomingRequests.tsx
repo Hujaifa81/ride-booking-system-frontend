@@ -30,6 +30,7 @@ import {
   setActiveRide,
   clearIncomingRequests,
 } from "@/redux/features/ride/ride.slice";
+import { useNavigate } from "react-router";
 
 const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
@@ -39,13 +40,10 @@ const IncomingRequests = () => {
   // ✅ Get data from Redux (populated by global socket listener)
   const incomingRides = useSelector((state: any) => state.incomingRequests?.requests || []);
   const activeRide = useSelector((state: any) => state.activeRide?.ride || null);
-  const isSocketConnected = useSelector((state: any) => state.ride?.socketConnected || false);
+  // const isSocketConnected = useSelector((state: any) => state.ride?.socketConnected || false);
 
   // ✅ Get incoming rides with polling (for fresh data on mount)
-  const { refetch: refetchIncomingRides } = useGetIncomingRidesQuery(undefined, {
-    refetchOnMountOrArgChange: true,
-    pollingInterval: 5000,
-  });
+  const { refetch: refetchIncomingRides } = useGetIncomingRidesQuery(undefined);
 
   // ✅ Mutations
   const [acceptRide] = useAcceptRideMutation();
@@ -56,10 +54,10 @@ const IncomingRequests = () => {
   const [rejectingRideId, setRejectingRideId] = useState<string | null>(null);
 
   const isAcceptDisabled = !!acceptingRideId || !!activeRide;
+  const navigate=useNavigate()
 
   // ✅ NEW: Refetch incoming rides when component mounts (fresh data)
   useEffect(() => {
-    console.log("🔄 IncomingRequests mounted - fetching fresh data...");
     refetchIncomingRides();
   }, [refetchIncomingRides]);
 
@@ -75,6 +73,7 @@ const IncomingRequests = () => {
         dispatch(clearIncomingRequests());
 
         toast.success("Ride accepted successfully! 🎉");
+        navigate('/driver/active-ride')
       } catch (e: any) {
         toast.error(e?.data?.message || "Failed to accept ride");
       } finally {
@@ -124,12 +123,12 @@ const IncomingRequests = () => {
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               {/* ✅ Connection status indicator */}
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
+              {/* <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
                 <div className={`w-2 h-2 rounded-full ${isSocketConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
                 <span className="text-xs text-slate-600">
                   {isSocketConnected ? "✅ Connected" : "⚠️ Connecting..."}
                 </span>
-              </div>
+              </div> */}
 
               <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-base px-3 py-1.5">
                 <Zap className="w-4 h-4 mr-2" />

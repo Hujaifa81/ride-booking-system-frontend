@@ -36,8 +36,37 @@ export const driverApi = baseApi.injectEndpoints({
             }),
             invalidatesTags: ["DRIVER"],
         }),
+        getDashboardMetrics: builder.query({
+            query: () => ({
+                url: "/driver/dashboard-metrics",
+                method: "GET",
+            }),
+            providesTags: ["DASHBOARD_METRICS"],
+        }),
+        getEarningsAnalytics: builder.query({
+            query: ({params}) => ({
+                url: `/driver/earnings-analytics`,
+                method: "GET",
+                params
+            }),
+            providesTags: ["EARNINGS_ANALYTICS"],
+        }),
+        getPeakEarningHours: builder.query({
+            query: () => ({
+                url: `/driver/peak-earning-hours`,
+                method: "GET",
+            }),
+            providesTags: ["EARNINGS_ANALYTICS"],
+        }),
+        getTopRoutes: builder.query({
+            query: () => ({
+                url: `/driver/top-earning-routes`,
+                method: "GET",
+            }),
+            providesTags: ["EARNINGS_ANALYTICS"],
+        }),
 
     }),
 });
 
-export const { useCreateDriverMutation, useGetDriverProfileQuery, useUpdateDriverStatusMutation, useUpdateDriverLocationMutation } = driverApi;
+export const { useCreateDriverMutation, useGetDriverProfileQuery, useUpdateDriverStatusMutation, useUpdateDriverLocationMutation,useGetDashboardMetricsQuery,useGetEarningsAnalyticsQuery,useGetPeakEarningHoursQuery,useGetTopRoutesQuery } = driverApi;

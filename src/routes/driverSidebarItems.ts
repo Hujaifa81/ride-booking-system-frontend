@@ -1,8 +1,10 @@
 
 import DriverActiveRidePage from "@/pages/DriverActiveRidePage";
 import DriverDashboardPage from "@/pages/DriverDashboardPage";
+import EarningsAnalyticsPage from "@/pages/EarningsAnalyticsPage";
 import IncomingRequestsPage from "@/pages/IncomingRequestsPage";
 import ProfilePage from "@/pages/ProfilePage";
+import RideHistoryPage from "@/pages/RideHistoryPage";
 import VehicleManagementPage from "@/pages/VehicleManagementPage";
 import type { ISidebarItem } from "@/types";
 
@@ -30,6 +32,11 @@ export const driverSidebarItems: ISidebarItem[] = [
         url: "/driver/vehicle-management",
         component: VehicleManagementPage,
       },
+      {
+        title: "Earnings",
+        url: "/driver/earnings",
+        component: EarningsAnalyticsPage,
+      }
     ],
   },
   {
@@ -38,7 +45,7 @@ export const driverSidebarItems: ISidebarItem[] = [
       {
         title: "Ride History",
         url: "/driver/ride-history",
-        // component: RideHistoryPage,
+        component: RideHistoryPage,
       },
       
     ],

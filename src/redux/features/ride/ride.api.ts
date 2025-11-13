@@ -26,7 +26,7 @@ export const rideApi = baseApi.injectEndpoints({
                 method: "PATCH",
                 data: { canceledReason },
             }),
-            invalidatesTags: ["ACTIVE_RIDE", "RIDE_STATS","RIDE"],
+            invalidatesTags: ["ACTIVE_RIDE", "RIDE_STATS","RIDE", "INCOMING_RIDES", "DASHBOARD_METRICS"],
         }),
 
         getApproximateFare: builder.query<IResponse<IFareResponse>, IFareRequest>({
@@ -75,7 +75,7 @@ export const rideApi = baseApi.injectEndpoints({
                 url: `/ride/accept/${rideId}`,
                 method: "PATCH",
             }),
-            invalidatesTags: ["RIDE", "INCOMING_RIDES", "ACTIVE_RIDE"],
+            invalidatesTags: ["RIDE", "INCOMING_RIDES", "ACTIVE_RIDE", "DASHBOARD_METRICS"],
         }),
 
         rejectRide: builder.mutation<IResponse<Ride>, string>({
@@ -92,7 +92,7 @@ export const rideApi = baseApi.injectEndpoints({
                 method: "PATCH",
                 data: { status },
             }),
-            invalidatesTags: ["RIDE","ACTIVE_RIDE"],
+            invalidatesTags: ["RIDE","ACTIVE_RIDE", "DASHBOARD_METRICS","EARNINGS_ANALYTICS"],
         }),
     })
 });

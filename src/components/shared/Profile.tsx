@@ -220,7 +220,7 @@ const Profile = () => {
     { key: "edit", label: "Edit Profile", icon: Edit },
     { key: "security", label: "Security", icon: KeyRound },
   ];
-  if (isDriver) tabs.push({ key: "vehicles", label: "Vehicles", icon: Car });
+  // if (isDriver) tabs.push({ key: "vehicles", label: "Vehicles", icon: Car });
   // if (isRider) tabs.push({ key: "rider", label: "Rider Settings", icon: Settings });
   // tabs.push({ key: "preferences", label: "Preferences", icon: Settings });
 
@@ -595,7 +595,7 @@ const Profile = () => {
                 </div>
               )}
 
-              {activeTab === "vehicles" && isDriver && (
+              {/* {activeTab === "vehicles" && isDriver && (
                 <Card>
                   <CardHeader className="flex flex-row items-center justify-between">
                     <div>
@@ -613,7 +613,7 @@ const Profile = () => {
                     </div>
                   </CardContent>
                 </Card>
-              )}
+              )} */}
 
               {activeTab === "rider" && isRider && (
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

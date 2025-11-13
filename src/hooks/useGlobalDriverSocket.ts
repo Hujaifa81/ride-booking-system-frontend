@@ -13,6 +13,7 @@ import { rideApi } from "@/redux/features/ride/ride.api";
 import type { Ride } from "@/types";
 import { useGetDriverProfileQuery } from "@/redux/features/driver/driver.api";
 import { DriverStatus } from "@/constants/status";
+import { toast } from "sonner";
 
 let globalDriverListenersRegistered = false;
 let registeredHandlers: { [key: string]: (...args: any[]) => void } = {};
@@ -64,6 +65,7 @@ export const useGlobalDriverSocket = () => {
         console.log("🎯 GLOBAL: new_ride_request received:", payload._id);
         dispatch(addIncomingRequest(payload));
         dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
+        toast.success("New ride request received!");
       };
       socket.on("new_ride_request", handleNewRideRequest);
       registeredHandlers["new_ride_request"] = handleNewRideRequest;
