@@ -1,20 +1,20 @@
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
-    // Prefer Mapbox if a token is provided
-    const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
-    if (mapboxToken) {
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?limit=1&language=en&access_token=${encodeURIComponent(
-        mapboxToken
-      )}`;
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(`Mapbox ${res.status}`);
-      const json = await res.json();
-      return (
-        json?.features?.[0]?.place_name ||
-        json?.features?.[0]?.text ||
-        "Unable to fetch address"
-      );
-    }
+    // // Prefer Mapbox if a token is provided
+    // const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
+    // if (mapboxToken) {
+    //   const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?limit=1&language=en&access_token=${encodeURIComponent(
+    //     mapboxToken
+    //   )}`;
+    //   const res = await fetch(url);
+    //   if (!res.ok) throw new Error(`Mapbox ${res.status}`);
+    //   const json = await res.json();
+    //   return (
+    //     json?.features?.[0]?.place_name ||
+    //     json?.features?.[0]?.text ||
+    //     "Unable to fetch address"
+    //   );
+    // }
 
     // Fallback to OpenStreetMap Nominatim
     const email = import.meta.env.VITE_NOMINATIM_EMAIL || ""; // optional but recommended

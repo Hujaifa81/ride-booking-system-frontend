@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useDispatch, useSelector } from "react-redux";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import {
   MapPin,
   DollarSign,
@@ -31,16 +31,15 @@ import {
   clearIncomingRequests,
 } from "@/redux/features/ride/ride.slice";
 import { useNavigate } from "react-router";
-
-const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+import { reverseGeocode } from "@/utils/reverseGeocode";
 
 const IncomingRequests = () => {
   const dispatch = useDispatch();
+  const navigate = useNavigate();
 
   // ✅ Get data from Redux (populated by global socket listener)
   const incomingRides = useSelector((state: any) => state.incomingRequests?.requests || []);
   const activeRide = useSelector((state: any) => state.activeRide?.ride || null);
-  // const isSocketConnected = useSelector((state: any) => state.ride?.socketConnected || false);
 
   // ✅ Get incoming rides with polling (for fresh data on mount)
   const { refetch: refetchIncomingRides } = useGetIncomingRidesQuery(undefined);
@@ -52,9 +51,93 @@ const IncomingRequests = () => {
   // UI State
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
   const [rejectingRideId, setRejectingRideId] = useState<string | null>(null);
+  const [addressCache, setAddressCache] = useState<Record<string, string>>({});
+  const isFetchingRef = useRef(false);
 
   const isAcceptDisabled = !!acceptingRideId || !!activeRide;
-  const navigate=useNavigate()
+
+  // ✅ Reverse Geocoding utilities
+  const FAILED = "Unable to fetch address";
+
+  const getCoords = (location: any): [number, number] | undefined => {
+    if (location?.coordinates) {
+      if (Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+        return [location.coordinates[0], location.coordinates[1]];
+      }
+    }
+    return undefined;
+  };
+
+  const coordKey = (lng: number, lat: number) => `${lng},${lat}`;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const formattedRides = useMemo(() => {
+    return incomingRides.map((ride: Ride) => ({
+      ...ride,
+      pickupCoords: getCoords(ride.pickupLocation),
+      dropoffCoords: getCoords(ride.dropOffLocation),
+    }));
+  }, [incomingRides]);
+
+  // ✅ Fetch missing addresses
+  useEffect(() => {
+    if (isFetchingRef.current) return;
+
+    const keys = new Map<string, { lng: number; lat: number }>();
+
+    for (const ride of formattedRides) {
+      if (ride.pickupCoords && !ride.pickupAddress) {
+        const [lng, lat] = ride.pickupCoords;
+        const key = coordKey(lng, lat);
+        if (!(key in addressCache)) {
+          keys.set(key, { lng, lat });
+        }
+      }
+      if (ride.dropoffCoords && !ride.dropOffAddress) {
+        const [lng, lat] = ride.dropoffCoords;
+        const key = coordKey(lng, lat);
+        if (!(key in addressCache)) {
+          keys.set(key, { lng, lat });
+        }
+      }
+    }
+
+    if (keys.size === 0) return;
+
+    isFetchingRef.current = true;
+
+    (async () => {
+      for (const [key, { lng, lat }] of keys) {
+        try {
+          const name = await reverseGeocode(lat, lng);
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: name || FAILED };
+          });
+        } catch {
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: FAILED };
+          });
+        }
+        await sleep(1100); // Rate limiting
+      }
+      isFetchingRef.current = false;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedRides]);
+
+  const resolveAddress = (
+    savedAddress: string | undefined,
+    coords: [number, number] | undefined
+  ): string => {
+    if (savedAddress) return savedAddress;
+    if (!coords) return "Unknown location";
+    const name = addressCache[coordKey(coords[0], coords[1])];
+    if (!name) return "Loading address...";
+    if (name === FAILED) return `${coords[1].toFixed(5)}, ${coords[0].toFixed(5)}`;
+    return name;
+  };
 
   // ✅ NEW: Refetch incoming rides when component mounts (fresh data)
   useEffect(() => {
@@ -73,14 +156,14 @@ const IncomingRequests = () => {
         dispatch(clearIncomingRequests());
 
         toast.success("Ride accepted successfully! 🎉");
-        navigate('/driver/active-ride')
+        navigate("/driver/active-ride");
       } catch (e: any) {
         toast.error(e?.data?.message || "Failed to accept ride");
       } finally {
         setAcceptingRideId(null);
       }
     },
-    [acceptRide, dispatch]
+    [acceptRide, dispatch, navigate]
   );
 
   // ✅ Decline request
@@ -105,7 +188,10 @@ const IncomingRequests = () => {
   // ✅ Stats
   const avgFare =
     incomingRides.length > 0
-      ? (incomingRides.reduce((sum: number, r: Ride) => sum + (r.approxFare || 0), 0) / incomingRides.length).toFixed(2)
+      ? (
+          incomingRides.reduce((sum: number, r: Ride) => sum + (r.approxFare || 0), 0) /
+          incomingRides.length
+        ).toFixed(2)
       : "0.00";
 
   const nearbyRides = incomingRides.filter((r: Ride) => (r.distance || 0) < 5).length;
@@ -122,14 +208,6 @@ const IncomingRequests = () => {
               <p className="text-sm text-slate-600 mt-1">Accept or decline new ride requests</p>
             </div>
             <div className="flex items-center gap-3 flex-wrap">
-              {/* ✅ Connection status indicator */}
-              {/* <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg">
-                <div className={`w-2 h-2 rounded-full ${isSocketConnected ? "bg-emerald-500" : "bg-amber-500"}`} />
-                <span className="text-xs text-slate-600">
-                  {isSocketConnected ? "✅ Connected" : "⚠️ Connecting..."}
-                </span>
-              </div> */}
-
               <Badge variant="outline" className="bg-blue-50 border-blue-200 text-blue-700 text-base px-3 py-1.5">
                 <Zap className="w-4 h-4 mr-2" />
                 {incomingRides.length} Request{incomingRides.length !== 1 ? "s" : ""}
@@ -213,17 +291,9 @@ const IncomingRequests = () => {
           </Card>
         ) : (
           <div className="space-y-4">
-            {incomingRides.map((ride: Ride, index: number) => {
-              const pickup =
-                ride.pickupAddress ||
-                (ride.pickupLocation?.coordinates
-                  ? formatCoords(ride.pickupLocation.coordinates)
-                  : "Pickup");
-              const dropoff =
-                ride.dropOffAddress ||
-                (ride.dropOffLocation?.coordinates
-                  ? formatCoords(ride.dropOffLocation.coordinates)
-                  : "Dropoff");
+            {formattedRides.map((ride: any, index: number) => {
+              const pickup = resolveAddress(ride.pickupAddress, ride.pickupCoords);
+              const dropoff = resolveAddress(ride.dropOffAddress, ride.dropoffCoords);
               const etaMin = typeof ride.estimatedDuration === "number" ? ride.estimatedDuration : undefined;
               const distanceKm = typeof ride.distance === "number" ? ride.distance : undefined;
               const fare = typeof ride.approxFare === "number" ? ride.approxFare : undefined;

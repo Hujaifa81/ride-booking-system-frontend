@@ -54,8 +54,9 @@ import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { initSocket } from "@/lib/socket";
+import { reverseGeocode } from "@/utils/reverseGeocode";
 
-// Fix Leaflet default marker icons for bundlers
+
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
@@ -72,11 +73,10 @@ const driverIcon = new L.Icon({
   shadowSize: [41, 41],
 });
 
-// Helpers
 const toLeaflet = (lngLat?: [number, number] | null): [number, number] | undefined =>
   lngLat ? [lngLat[1], lngLat[0]] : undefined;
 const dhakaCenter: [number, number] = [23.8103, 90.4125];
-const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
+// const formatCoords = ([lng, lat]: [number, number]) => `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 
 const getActiveRideBadge = (status: string) => {
   switch (status) {
@@ -104,14 +104,11 @@ const getActiveRideBadge = (status: string) => {
 const DriverDashboard = () => {
   const dispatch = useDispatch();
 
-  // ✅ Get data from Redux (populated by global socket listener)
   const incomingRidesRedux = useSelector((state: any) => state?.requests || []);
-  // ✅ Local state to track if ride is completed (permanently disable polling)
   const [isRideCompleted, setIsRideCompleted] = useState(false);
-  // ✅ Track completed ride ID to prevent stale data re-sync
   const [completedRideId, setCompletedRideId] = useState<string | null>(null);
+  const [addressCache, setAddressCache] = useState<Record<string, string>>({});
 
-  // ✅ Get driver profile with polling
   const {
     data: driverProfile,
     isLoading: isProfileLoading,
@@ -119,29 +116,25 @@ const DriverDashboard = () => {
     refetch: refetchProfile,
   } = useGetDriverProfileQuery(undefined);
 
-  // ✅ Get active ride from API - COMPLETELY SKIP if ride is completed
   const {
     data: activeRideData,
     isLoading: isActiveRideLoading,
     refetch: refetchActiveRide,
   } = useActiveRideQuery(undefined, {
-    skip: isRideCompleted, // ✅ Completely skip the query when ride is completed
+    skip: isRideCompleted,
   });
 
-  // ✅ Get incoming rides with polling
   const {
     data: incomingRidesData,
     refetch: refetchIncomingRides,
   } = useGetIncomingRidesQuery(undefined);
 
-  // ✅ Get dashboard metrics
   const {
     data: dashboardMetricsData,
     isLoading: isDashboardMetricsLoading,
     refetch: refetchDashboardMetrics,
   } = useGetDashboardMetricsQuery(undefined);
 
-  // ✅ Extract metrics from API response
   const dashboardMetrics = useMemo(() => {
     return dashboardMetricsData?.data || {
       tripsToday: 0,
@@ -152,25 +145,20 @@ const DriverDashboard = () => {
     };
   }, [dashboardMetricsData?.data]);
 
-  // ✅ ENHANCED: Filter completed rides more aggressively
   const activeRide = useMemo(() => {
-    // ✅ Never show any ride if we marked one as completed
     if (isRideCompleted) {
       return null;
     }
 
-    // ✅ If API data doesn't exist, return null
     if (!activeRideData?.data) {
       return null;
     }
     const ride = activeRideData.data;
 
-    // ✅ Filter out COMPLETED status
     if (ride.status === "COMPLETED") {
       return null;
     }
 
-    // ✅ If this ride matches completed ride ID, ignore it
     if (completedRideId && ride._id === completedRideId) {
       return null;
     }
@@ -180,17 +168,14 @@ const DriverDashboard = () => {
 
   const incomingRides = incomingRidesData?.data || incomingRidesRedux;
 
-  // ✅ Filter out completed/cancelled rides for display
   const displayActiveRide = useMemo(() => {
     if (!activeRide) {
       return null;
     }
-    // ✅ NEVER show completed rides
     if (activeRide.status === "COMPLETED") {
       return null;
     }
 
-    // ✅ NEVER show cancelled rides
     if (
       activeRide.status === "CANCELLED_BY_DRIVER" ||
       activeRide.status === "CANCELLED_BY_RIDER" ||
@@ -198,10 +183,10 @@ const DriverDashboard = () => {
     ) {
       return null;
     }
+
     return activeRide;
   }, [activeRide]);
 
-  // ✅ Mutations
   const [updateStatus, { isLoading: isUpdating }] = useUpdateDriverStatusMutation();
   const [acceptRide] = useAcceptRideMutation();
   const [rejectRide, { isLoading: isRejecting }] = useRejectRideMutation();
@@ -209,19 +194,16 @@ const DriverDashboard = () => {
   const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] =
     useUpdateRideStatusAfterAcceptedMutation();
 
-  // Driver status
   const status = (driverProfile as any)?.data?.status;
   const isAvailable = status === DriverStatus.AVAILABLE;
   const isOnTrip = status === DriverStatus.ON_TRIP;
   const isOffline = status === DriverStatus.OFFLINE || !status;
 
-  // UI State
   const [showLocModal, setShowLocModal] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [acceptingRideId, setAcceptingRideId] = useState<string | null>(null);
 
-  // Profile coordinates
   const profileCoords = useMemo<[number, number] | null>(() => {
     const raw = (driverProfile as any)?.data?.location?.coordinates;
     if (Array.isArray(raw) && raw.length === 2 && raw.every((n: any) => typeof n === "number")) {
@@ -234,16 +216,59 @@ const DriverDashboard = () => {
   const isCancelEnabled = !!(displayActiveRide && cancelEnabledStatuses.includes(displayActiveRide.status));
   const isAcceptDisabled = !!acceptingRideId || !!displayActiveRide;
 
-  // ✅ Refetch all fresh data when component mounts
+  const getAddressFromCoords = useCallback(async (coords: [number, number]): Promise<string> => {
+    const key = `${coords[0]},${coords[1]}`;
+    if (addressCache[key]) {
+      return addressCache[key];
+    }
+
+    const address = await reverseGeocode(coords[1], coords[0]);
+    setAddressCache(prev => ({ ...prev, [key]: address }));
+    return address;
+  }, [addressCache]);
+
+  const getPickupAddress = useCallback(async (ride: Ride): Promise<string> => {
+    if (ride.pickupAddress) return ride.pickupAddress;
+    if (ride.pickupLocation?.coordinates) {
+      return await getAddressFromCoords(ride.pickupLocation.coordinates);
+    }
+    return "Pickup";
+  }, [getAddressFromCoords]);
+
+  const getDropoffAddress = useCallback(async (ride: Ride): Promise<string> => {
+    if (ride.dropOffAddress) return ride.dropOffAddress;
+    if (ride.dropOffLocation?.coordinates) {
+      return await getAddressFromCoords(ride.dropOffLocation.coordinates);
+    }
+    return "Dropoff";
+  }, [getAddressFromCoords]);
+
   useEffect(() => {
     refetchProfile();
-    // refetchDashboardMetrics();
+    refetchIncomingRides();
+    refetchDashboardMetrics()
+
     if (!isRideCompleted) {
       refetchActiveRide();
     }
-  }, [refetchProfile, refetchActiveRide, activeRide, isRideCompleted]);
+  }, [refetchProfile, refetchActiveRide, activeRide, isRideCompleted, refetchIncomingRides, refetchDashboardMetrics]);
 
-  // ✅ Toggle availability
+  useEffect(() => {
+    if (displayActiveRide) {
+      getPickupAddress(displayActiveRide);
+      getDropoffAddress(displayActiveRide);
+    }
+  }, [displayActiveRide, getPickupAddress, getDropoffAddress]);
+
+  useEffect(() => {
+    if (incomingRides && incomingRides.length > 0) {
+      incomingRides.forEach((ride: Ride) => {
+        getPickupAddress(ride);
+        getDropoffAddress(ride);
+      });
+    }
+  }, [incomingRides, getPickupAddress, getDropoffAddress]);
+
   const toggleAvailability = useCallback(async () => {
     if (isOnTrip) return;
     const next = isAvailable ? DriverStatus.OFFLINE : DriverStatus.AVAILABLE;
@@ -256,7 +281,6 @@ const DriverDashboard = () => {
     }
   }, [isAvailable, isOnTrip, updateStatus, refetchProfile]);
 
-  // ✅ Accept request - RESET completion flags to enable polling again
   const acceptRequest = useCallback(
     async (ride: Ride) => {
       try {
@@ -265,11 +289,9 @@ const DriverDashboard = () => {
 
         const socket = initSocket();
         socket.emit("join_ride_room", { rideId: ride._id });
-        // ✅ Update Redux
         dispatch(setActiveRide(res?.data || null));
         dispatch(clearIncomingRequests());
         dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES"]));
-        // ✅ RESET completion flags - this re-enables polling for the new ride
         setIsRideCompleted(false);
         setCompletedRideId(null);
 
@@ -278,6 +300,7 @@ const DriverDashboard = () => {
         await refetchProfile();
         await refetchActiveRide();
         await refetchDashboardMetrics();
+
       } catch (e: any) {
         toast.error(e?.data?.message || "Failed to accept ride");
       } finally {
@@ -287,7 +310,6 @@ const DriverDashboard = () => {
     [acceptRide, dispatch, refetchProfile, refetchActiveRide, refetchDashboardMetrics]
   );
 
-  // ✅ Decline request
   const declineRequest = useCallback(
     async (rideId: string) => {
       try {
@@ -302,7 +324,6 @@ const DriverDashboard = () => {
     [rejectRide, dispatch, refetchIncomingRides]
   );
 
-  // ✅ Cancel ride - PERMANENTLY disable polling
   const handleCancelRide = useCallback(async () => {
     if (!displayActiveRide) return;
     try {
@@ -313,9 +334,8 @@ const DriverDashboard = () => {
       const socket = initSocket();
       socket.emit("leave_ride_room", { rideId: displayActiveRide._id });
 
-      // ✅ Mark ride as completed (keep polling disabled)
       setCompletedRideId(displayActiveRide._id);
-      setIsRideCompleted(true); // ✅ STAYS TRUE - never reset
+      setIsRideCompleted(true);
       dispatch(clearActiveRide());
       dispatch(clearIncomingRequests());
 
@@ -328,28 +348,25 @@ const DriverDashboard = () => {
     }
   }, [displayActiveRide, cancelReason, cancelRide, dispatch, refetchDashboardMetrics]);
 
-  // ✅ Update ride status - PERMANENTLY disable polling on completion
   const handleStatusChange = useCallback(
     async (ride: Ride, nextStatus: string) => {
       try {
         const res = await statusUpdateAfterAccepted({ rideId: ride._id, status: nextStatus }).unwrap();
 
         if (nextStatus === "COMPLETED") {
-          // ✅ Mark ride as completed - THIS STAYS TRUE
           setCompletedRideId(ride._id);
-          setIsRideCompleted(true); // ✅ STAYS TRUE - NEVER RESET
+          setIsRideCompleted(true);
 
-          // ✅ Clear Redux
           dispatch(clearActiveRide());
           dispatch(clearIncomingRequests());
 
-          dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE", "INCOMING_RIDES", "RIDE"]));
+          dispatch(rideApi.util.invalidateTags(["ACTIVE_RIDE", "INCOMING_RIDES", "RIDE", "RIDE_STATS", "DASHBOARD_METRICS", "EARNINGS_ANALYTICS"]));
+          await new Promise(resolve => setTimeout(resolve, 100));
           await refetchActiveRide();
           await refetchDashboardMetrics();
 
           toast.success("Ride completed! ✅");
         } else {
-          // ✅ For non-completion status updates
           dispatch(setActiveRide(res?.data || null));
           toast.success(`Status updated to ${getActiveRideBadge(nextStatus)}`);
 
@@ -364,14 +381,12 @@ const DriverDashboard = () => {
     [statusUpdateAfterAccepted, dispatch, refetchProfile, refetchActiveRide, refetchDashboardMetrics]
   );
 
-  // Progress bar component
   const progressBar = (value: number, color = "bg-emerald-500") => (
     <div className="w-full h-2 rounded-full bg-blue-100 overflow-hidden">
       <div className={`h-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} />
     </div>
   );
 
-  // Status badge component
   const statusBadge = () => {
     const cls =
       isAvailable
@@ -389,13 +404,40 @@ const DriverDashboard = () => {
     );
   };
 
-  // Map setup
   const leafletCenter = toLeaflet(profileCoords) || dhakaCenter;
   const mapKey = `map-${profileCoords ? `${profileCoords[1]}-${profileCoords[0]}` : "default"}`;
 
+  const RideLocationDisplay = ({ ride }: { ride: Ride }) => {
+    const [pickup, setPickup] = useState<string>("Loading...");
+    const [dropoff, setDropoff] = useState<string>("Loading...");
+
+    useEffect(() => {
+      const loadAddresses = async () => {
+        const pickupAddr = await getPickupAddress(ride);
+        const dropoffAddr = await getDropoffAddress(ride);
+        setPickup(pickupAddr);
+        setDropoff(dropoffAddr);
+      };
+      loadAddresses();
+    }, [ride]);
+
+    return (
+      <>
+        <div className="flex items-center gap-2 break-words">
+          <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
+          <span className="font-semibold text-gray-900">{pickup}</span>
+        </div>
+        <div className="h-4 w-0.5 bg-gray-400 ml-2 my-2 rounded-full" />
+        <div className="flex items-center gap-2 break-words">
+          <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0" />
+          <span className="font-semibold text-gray-900">{dropoff}</span>
+        </div>
+      </>
+    );
+  };
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 bg-gradient-to-br from-white via-blue-50 to-indigo-50 min-h-screen">
-      {/* Header row */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Driver Dashboard</h1>
@@ -420,9 +462,9 @@ const DriverDashboard = () => {
                   : "Go Online"}
           </Button>
 
-          <Button 
-            variant="outline" 
-            onClick={() => setShowLocModal(true)} 
+          <Button
+            variant="outline"
+            onClick={() => setShowLocModal(true)}
             className="whitespace-nowrap border-gray-300 text-gray-900 hover:bg-blue-50"
           >
             <MapPin className="w-4 h-4 mr-2" />
@@ -431,7 +473,6 @@ const DriverDashboard = () => {
         </div>
       </div>
 
-      {/* Error Messages */}
       {isProfileError && (
         <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-300 text-sm text-rose-700 flex items-start gap-2 shadow-sm">
           <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -442,9 +483,7 @@ const DriverDashboard = () => {
         </div>
       )}
 
-      {/* KPI cards - Updated with API data */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
-        {/* Earnings Today */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-blue-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -469,7 +508,6 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Trips Today */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-indigo-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -492,7 +530,6 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Rating */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-amber-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -518,7 +555,6 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Cancelled Rides Today */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-red-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center gap-2">
@@ -536,9 +572,9 @@ const DriverDashboard = () => {
                 <div className="text-2xl font-bold text-gray-900">{dashboardMetrics.cancelledToday || 0}</div>
                 <div className="mt-3">
                   <div className="w-full h-2 rounded-full bg-red-100 overflow-hidden">
-                    <div 
-                      className="h-full bg-red-500" 
-                      style={{ width: `${Math.min(100, ((dashboardMetrics.cancelledToday || 0) / 3) * 100)}%` }} 
+                    <div
+                      className="h-full bg-red-500"
+                      style={{ width: `${Math.min(100, ((dashboardMetrics.cancelledToday || 0) / 3) * 100)}%` }}
                     />
                   </div>
                 </div>
@@ -549,7 +585,6 @@ const DriverDashboard = () => {
         </Card>
       </div>
 
-      {/* ✅ Location map - Only show when driver is NOT offline */}
       {!isOffline && (
         <Card className="border-0 shadow-sm mb-6 bg-white">
           <CardHeader className="pb-2">
@@ -595,9 +630,7 @@ const DriverDashboard = () => {
         </Card>
       )}
 
-      {/* Main grid */}
       <div className="grid grid-cols-1 xl:grid-cols-4 gap-4">
-        {/* Active Ride / Availability */}
         <Card className="xl:col-span-2 border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between gap-2">
@@ -632,25 +665,7 @@ const DriverDashboard = () => {
                 <div className="rounded-lg border border-gray-300 bg-gray-50 p-3 sm:p-4 shadow-sm">
                   <div className="flex flex-col sm:flex-row sm:items-start gap-4">
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 break-words">
-                        <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                        <span className="font-semibold text-gray-900">
-                          {displayActiveRide.pickupAddress ||
-                            (displayActiveRide.pickupLocation?.coordinates
-                              ? formatCoords(displayActiveRide.pickupLocation.coordinates)
-                              : "Pickup")}
-                        </span>
-                      </div>
-                      <div className="h-4 w-0.5 bg-gray-400 ml-2 my-2 rounded-full" />
-                      <div className="flex items-center gap-2 break-words">
-                        <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                        <span className="font-semibold text-gray-900">
-                          {displayActiveRide.dropOffAddress ||
-                            (displayActiveRide.dropOffLocation?.coordinates
-                              ? formatCoords(displayActiveRide.dropOffLocation.coordinates)
-                              : "Dropoff")}
-                        </span>
-                      </div>
+                      <RideLocationDisplay ride={displayActiveRide} />
                       <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-gray-700">
                         {typeof displayActiveRide.estimatedDuration === "number" && (
                           <span className="inline-flex items-center gap-1 flex-shrink-0 bg-white px-2 py-1 rounded-md border border-gray-300">
@@ -836,7 +851,6 @@ const DriverDashboard = () => {
           </CardContent>
         </Card>
 
-        {/* Incoming Requests */}
         <Card className="xl:col-span-2 border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between gap-2">
@@ -844,9 +858,9 @@ const DriverDashboard = () => {
                 <CardTitle>Incoming Requests</CardTitle>
                 <CardDescription>Accept or decline new ride requests</CardDescription>
               </div>
-              <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-700 whitespace-nowrap">
+              {/* <Badge variant="outline" className="bg-blue-50 border-blue-300 text-blue-700 whitespace-nowrap">
                 {incomingRides?.length || 0}
-              </Badge>
+              </Badge> */}
             </div>
           </CardHeader>
           <CardContent className="space-y-3 pt-4">
@@ -871,12 +885,6 @@ const DriverDashboard = () => {
               </div>
             ) : (
               incomingRides.map((ride: Ride) => {
-                const pickup =
-                  ride.pickupAddress ||
-                  (ride.pickupLocation?.coordinates ? formatCoords(ride.pickupLocation.coordinates) : "Pickup");
-                const dropoff =
-                  ride.dropOffAddress ||
-                  (ride.dropOffLocation?.coordinates ? formatCoords(ride.dropOffLocation.coordinates) : "Dropoff");
                 const etaMin = typeof ride.estimatedDuration === "number" ? ride.estimatedDuration : undefined;
                 const distanceKm = typeof ride.distance === "number" ? ride.distance : undefined;
                 const fare = typeof ride.approxFare === "number" ? ride.approxFare : undefined;
@@ -886,20 +894,14 @@ const DriverDashboard = () => {
                 return (
                   <div
                     key={ride._id}
-                    className={`rounded-lg border p-3 sm:p-4 bg-white transition shadow-sm ${
-                      isAcceptDisabled ? "opacity-50 cursor-not-allowed" : "hover:shadow-md border-gray-300"
-                    }`}
+                    className={`rounded-lg border p-3 sm:p-4 bg-white transition shadow-sm ${isAcceptDisabled ? "opacity-50 cursor-not-allowed" : "hover:shadow-md border-gray-300"
+                      }`}
                   >
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
                       <div className="flex-1 min-w-0">
                         <div className="text-sm text-gray-600 break-all">{ride._id}</div>
-                        <div className="mt-1 flex items-center gap-2 break-words">
-                          <MapPin className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                          <span className="font-semibold text-gray-900">{pickup}</span>
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 break-words">
-                          <MapPin className="w-4 h-4 text-rose-600 flex-shrink-0" />
-                          <span className="font-semibold text-gray-900">{dropoff}</span>
+                        <div className="mt-1">
+                          <RideLocationDisplay ride={ride} />
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-3 text-sm text-gray-700">
                           {typeof etaMin === "number" && (
@@ -962,40 +964,8 @@ const DriverDashboard = () => {
             )}
           </CardContent>
         </Card>
-
-        {/* Recent Activity */}
-        {/* <Card className="border-0 shadow-sm bg-white">
-          <CardHeader className="pb-3 border-b border-gray-200">
-            <CardTitle className="text-base">Recent Activity</CardTitle>
-            <CardDescription>Latest completed trips and updates</CardDescription>
-          </CardHeader>
-          <CardContent className="pt-4">
-            <ul className="space-y-4">
-              {[
-                { id: "TR-8172", text: "Trip completed • 6.2 km • $12.80", ts: "Just now", icon: "✅" },
-                { id: "TR-8169", text: "Rider rated you 5.0 ★", ts: "18m ago", icon: "⭐" },
-                { id: "TR-8163", text: "Trip completed • 12.4 km • $21.50", ts: "1h ago", icon: "✅" },
-                { id: "SYS-PR", text: "Payout request initiated", ts: "2h ago", icon: "💳" },
-              ].map((a) => (
-                <li key={a.id} className="flex gap-3">
-                  <div className="mt-1 text-lg flex-shrink-0">{a.icon}</div>
-                  <div className="min-w-0">
-                    <div className="text-sm text-gray-900 font-medium break-words">{a.text}</div>
-                    <div className="text-xs text-gray-600 mt-0.5">{a.ts}</div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-4">
-              <Button variant="outline" size="sm" className="border-gray-300 text-gray-900 hover:bg-blue-50">
-                View All
-              </Button>
-            </div>
-          </CardContent>
-        </Card> */}
       </div>
 
-      {/* Location modal */}
       <DriverLocationModal
         open={showLocModal}
         onOpenChange={setShowLocModal}

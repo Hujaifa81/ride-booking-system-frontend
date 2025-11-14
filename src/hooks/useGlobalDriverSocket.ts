@@ -103,7 +103,7 @@ export const useGlobalDriverSocket = () => {
 
           dispatch(clearActiveRide());
           dispatch(clearIncomingRequests());
-          dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES", "ACTIVE_RIDE", "RIDE_STATS"]));
+          dispatch(rideApi.util.invalidateTags(["INCOMING_RIDES", "ACTIVE_RIDE", "RIDE_STATS","DASHBOARD_METRICS","EARNINGS_ANALYTICS"]));
         } else if (isCancelled) {
           console.log("❌ GLOBAL: Ride cancelled - clearing everything and leaving room");
           // ✅ Leave ride room when cancelled

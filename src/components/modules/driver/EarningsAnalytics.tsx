@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   BarChart,
   Bar,
@@ -42,11 +42,13 @@ import {
   useGetPeakEarningHoursQuery,
   useGetTopRoutesQuery,
 } from "@/redux/features/driver/driver.api";
+import { reverseGeocode } from "@/utils/reverseGeocode";
 
 const EarningsAnalytics = () => {
   const [timeframe, setTimeframe] = useState<"daily" | "weekly" | "monthly" | "yearly">("daily");
+  const [addressCache, setAddressCache] = useState<Record<string, string>>({});
+  const isFetchingRef = useRef(false);
 
-  // API Queries
   const {
     data: analyticsData,
     isLoading: analyticsLoading,
@@ -63,14 +65,128 @@ const EarningsAnalytics = () => {
     isLoading: topRoutesLoading,
   } = useGetTopRoutesQuery(undefined);
 
-  // Extract data
   const analytics = analyticsData?.data;
   const peakEarningHours = peakEarningHourData?.data;
   const topRoutes = topRoutesData?.data;
-  console.log(analytics);
-  console.log(peakEarningHours);
-  console.log(topRoutes)
-  // Format period label
+
+  
+
+  // --- Reverse Geocoding ---
+  const FAILED = "Unable to fetch address";
+
+  const getCoords = (location: any): [number, number] | undefined => {
+    // Handle both formats: GeoJSON array and lat/lng object
+    if (location?.coordinates) {
+      // Check if it's an array [lng, lat]
+      if (Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+        return [location.coordinates[0], location.coordinates[1]];
+      }
+      // Check if it's an object with latitude/longitude
+      if (location.coordinates.latitude !== undefined && location.coordinates.longitude !== undefined) {
+        return [location.coordinates.longitude, location.coordinates.latitude];
+      }
+    }
+    return undefined;
+  };
+
+  const coordKey = (lng: number, lat: number) => `${lng},${lat}`;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const formattedTopRoutes = useMemo(() => {
+    if (!topRoutes?.topRoutes) return [];
+    
+    console.log('Raw topRoutes data:', topRoutes.topRoutes); // Debug log
+    
+    return topRoutes.topRoutes.slice(0, 5).map((route: any) => {
+      const pickupCoords = getCoords(route.pickupLocation);
+      const dropoffCoords = getCoords(route.dropOffLocation);
+      
+      console.log('Route:', route); // Debug log
+      console.log('Pickup coords:', pickupCoords); // Debug log
+      console.log('Dropoff coords:', dropoffCoords); // Debug log
+      
+      return {
+        rank: route.rank,
+        pickupCoords,
+        dropoffCoords,
+        pickupArea: route.pickupLocation?.area || "Unknown Area",
+        dropoffArea: route.dropOffLocation?.area || "Unknown Area",
+        trips: route.rideCount,
+        earnings: route.totalEarnings,
+        avgEarning: route.averageEarning,
+        avgDistance: route.averageDistance,
+      };
+    });
+  }, [topRoutes]);
+
+  // Fetch missing addresses for current routes (sequential, throttled)
+  useEffect(() => {
+    if (isFetchingRef.current) return;
+
+    const keys = new Map<string, { lng: number; lat: number }>();
+    
+    for (const route of formattedTopRoutes) {
+      if (route.pickupCoords) {
+        const [lng, lat] = route.pickupCoords;
+        const key = coordKey(lng, lat);
+        if (!(key in addressCache)) {
+          keys.set(key, { lng, lat });
+        }
+      }
+      if (route.dropoffCoords) {
+        const [lng, lat] = route.dropoffCoords;
+        const key = coordKey(lng, lat);
+        if (!(key in addressCache)) {
+          keys.set(key, { lng, lat });
+        }
+      }
+    }
+
+    console.log('Keys to fetch:', keys.size, Array.from(keys.entries())); // Debug log
+
+    if (keys.size === 0) return;
+
+    isFetchingRef.current = true;
+
+    (async () => {
+      for (const [key, { lng, lat }] of keys) {
+        try {
+          console.log(`Fetching address for: lat=${lat}, lng=${lng}`);
+          const name = await reverseGeocode(lat, lng);
+          console.log(`Received address: ${name}`);
+          
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: name || FAILED };
+          });
+        } catch (error) {
+          console.error(`Error fetching address for lat=${lat}, lng=${lng}:`, error);
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: FAILED };
+          });
+        }
+        await sleep(1100);
+      }
+      isFetchingRef.current = false;
+    })();
+    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedTopRoutes]);
+
+  const resolveLabel = (saved: string | undefined, coords: [number, number] | undefined) => {
+    if (saved && saved !== "Unknown Area" && !saved.includes(',')) {
+      // If saved doesn't look like coordinates, use it
+      return saved;
+    }
+    if (!coords) return "-";
+    const name = addressCache[coordKey(coords[0], coords[1])];
+    if (!name) return "Loading...";
+    if (name === FAILED) return saved || "Unknown Area";
+    return name;
+  };
+  // --- End Reverse Geocoding ---
+
   const getPeriodLabel = () => {
     switch (timeframe) {
       case "daily":
@@ -86,7 +202,6 @@ const EarningsAnalytics = () => {
     }
   };
 
-  // Calculate stats
   const stats = useMemo(() => {
     if (!analytics?.summary) {
       return {
@@ -112,8 +227,18 @@ const EarningsAnalytics = () => {
           : timeframe === "monthly"
           ? analytics.summary.averagePerMonth?.toFixed(2) || "0.00"
           : analytics.summary.averagePerYear?.toFixed(2) || "0.00",
-      maxEarnings: analytics.summary.highestDayEarning?.toFixed(2) || analytics.summary.highestWeekEarning?.toFixed(2) || analytics.summary.highestMonthEarning?.toFixed(2) || analytics.summary.highestYearEarning?.toFixed(2) || "0.00",
-      minEarnings: analytics.summary.lowestDayEarning?.toFixed(2) || analytics.summary.lowestWeekEarning?.toFixed(2) || analytics.summary.lowestMonthEarning?.toFixed(2) || analytics.summary.lowestYearEarning?.toFixed(2) || "0.00",
+      maxEarnings:
+        analytics.summary.highestDayEarning?.toFixed(2) ||
+        analytics.summary.highestWeekEarning?.toFixed(2) ||
+        analytics.summary.highestMonthEarning?.toFixed(2) ||
+        analytics.summary.highestYearEarning?.toFixed(2) ||
+        "0.00",
+      minEarnings:
+        analytics.summary.lowestDayEarning?.toFixed(2) ||
+        analytics.summary.lowestWeekEarning?.toFixed(2) ||
+        analytics.summary.lowestMonthEarning?.toFixed(2) ||
+        analytics.summary.lowestYearEarning?.toFixed(2) ||
+        "0.00",
       totalTrips: analytics.summary.totalTrips || 0,
       earningsChange: analytics.summary.earningsChange || 0,
       earningsTrend: analytics.summary.earningsTrend || "neutral",
@@ -122,7 +247,6 @@ const EarningsAnalytics = () => {
     };
   }, [analytics, timeframe]);
 
-  // Format chart data
   const chartData = useMemo(() => {
     if (!analytics?.details) return [];
     return analytics.details.map((item: any) => ({
@@ -132,7 +256,6 @@ const EarningsAnalytics = () => {
     }));
   }, [analytics]);
 
-  // Format hourly data
   const hourlyData = useMemo(() => {
     if (!peakEarningHours?.hourlyBreakdown) return [];
     return peakEarningHours.hourlyBreakdown.map((item: any) => ({
@@ -143,20 +266,6 @@ const EarningsAnalytics = () => {
     }));
   }, [peakEarningHours]);
 
-  // Format top routes data
-  const formattedTopRoutes = useMemo(() => {
-    if (!topRoutes?.topRoutes) return [];
-    return topRoutes.topRoutes.slice(0, 5).map((route: any) => ({
-      rank: route.rank,
-      route: `${route.pickupLocation.area} → ${route.dropOffLocation.area}`,
-      trips: route.rideCount,
-      earnings: route.totalEarnings,
-      avgEarning: route.averageEarning,
-      avgDistance: route.averageDistance,
-    }));
-  }, [topRoutes]);
-
-  // Loading state
   if (analyticsLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-indigo-50 flex items-center justify-center">
@@ -168,7 +277,6 @@ const EarningsAnalytics = () => {
     );
   }
 
-  // Error state
   if (analyticsError) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-indigo-50 flex items-center justify-center p-4">
@@ -189,7 +297,6 @@ const EarningsAnalytics = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-white via-blue-50 to-indigo-50 p-4 sm:p-6 lg:p-8">
-      {/* Header */}
       <div className="mb-8">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -211,9 +318,7 @@ const EarningsAnalytics = () => {
         </div>
       </div>
 
-      {/* Top KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
-        {/* Total Earnings */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-blue-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center justify-between">
@@ -242,12 +347,13 @@ const EarningsAnalytics = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-gray-900">${stats.totalEarnings}</div>
-            <p className="text-sm text-gray-600 mt-2">{analytics?.periodLabel || "Current period"}</p>
+            <p className="text-sm text-gray-600 mt-2">
+              {analytics?.periodLabel || "Current period"}
+            </p>
             <div className="mt-4 h-1 bg-gradient-to-r from-blue-400 to-blue-600 rounded-full" />
           </CardContent>
         </Card>
 
-        {/* Average Per Period */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-emerald-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700">
@@ -261,7 +367,6 @@ const EarningsAnalytics = () => {
           </CardContent>
         </Card>
 
-        {/* Per Trip Average */}
         <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-amber-50 hover:shadow-md transition-shadow">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-700 flex items-center justify-between">
@@ -292,9 +397,7 @@ const EarningsAnalytics = () => {
         </Card>
       </div>
 
-      {/* Main Charts Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
-        {/* Earnings Trend Chart */}
         <Card className="xl:col-span-2 border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <div className="flex items-center justify-between">
@@ -359,7 +462,6 @@ const EarningsAnalytics = () => {
           </CardContent>
         </Card>
 
-        {/* Peak Hours Summary */}
         <Card className="border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <CardTitle>Peak Performance</CardTitle>
@@ -372,13 +474,10 @@ const EarningsAnalytics = () => {
               </div>
             ) : peakEarningHours ? (
               <div className="space-y-4">
-                {/* Peak Hour */}
                 <div className="p-3 bg-gradient-to-r from-blue-50 to-emerald-50 rounded-lg border border-blue-200">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-gray-600">Peak Earning Hour</span>
-                    <Badge className="bg-emerald-100 text-emerald-700 border-0">
-                      💰 Highest
-                    </Badge>
+                    <Badge className="bg-emerald-100 text-emerald-700 border-0">💰 Highest</Badge>
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
                     {peakEarningHours.peakHour?.hour}
@@ -389,11 +488,12 @@ const EarningsAnalytics = () => {
                   </div>
                 </div>
 
-                {/* Busiest Hour */}
                 <div className="p-3 bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg border border-purple-200">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-gray-600">Busiest Hour</span>
-                    <Badge className="bg-purple-100 text-purple-700 border-0">🚗 Most Rides</Badge>
+                    <Badge className="bg-purple-100 text-purple-700 border-0">
+                      🚗 Most Rides
+                    </Badge>
                   </div>
                   <div className="text-2xl font-bold text-gray-900">
                     {peakEarningHours.busiestHour?.hour}
@@ -404,7 +504,6 @@ const EarningsAnalytics = () => {
                   </div>
                 </div>
 
-                {/* Highest Average */}
                 <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 rounded-lg border border-amber-200">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-gray-600">Best Average</span>
@@ -426,9 +525,7 @@ const EarningsAnalytics = () => {
         </Card>
       </div>
 
-      {/* Hourly Breakdown and Top Routes */}
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        {/* Peak Hours Chart */}
+      <div className="grid grid-cols-1 xl:grid-cols-1 gap-6 mb-6">
         <Card className="border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <CardTitle>Hourly Earnings Breakdown</CardTitle>
@@ -476,7 +573,6 @@ const EarningsAnalytics = () => {
           </CardContent>
         </Card>
 
-        {/* Top Routes */}
         <Card className="border-0 shadow-sm bg-white">
           <CardHeader className="pb-3 border-b border-gray-200">
             <CardTitle>Top Earning Routes</CardTitle>
@@ -489,35 +585,39 @@ const EarningsAnalytics = () => {
               </div>
             ) : formattedTopRoutes.length > 0 ? (
               <div className="space-y-4">
-                {formattedTopRoutes.map((route: any, index: number) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <Badge className="bg-blue-100 text-blue-700 border-0 flex-shrink-0">
-                          #{route.rank}
-                        </Badge>
-                        <p className="font-semibold text-gray-900 text-sm truncate">
-                          {route.route}
-                        </p>
+                {formattedTopRoutes.map((route: any, index: number) => {
+                  const pickupLabel = resolveLabel(route.pickupArea, route.pickupCoords);
+                  const dropoffLabel = resolveLabel(route.dropoffArea, route.dropoffCoords);
+                  
+                  return (
+                    <div
+                      key={index}
+                      className="flex items-center justify-between p-3 bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg border border-gray-200 hover:border-blue-300 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-blue-100 text-blue-700 border-0 flex-shrink-0">
+                            #{route.rank}
+                          </Badge>
+                          <p className="font-semibold text-gray-900 text-sm truncate">
+                            {pickupLabel} → {dropoffLabel}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
+                          <span>🚗 {route.trips} trips</span>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-600">
-                        <span>🚗 {route.trips} trips</span>
-                        {/* <span>📏 {route.avgDistance?.toFixed(1) || 0} km</span> */}
+                      <div className="text-right ml-4 flex-shrink-0">
+                        <div className="text-lg font-bold text-gray-900">
+                          ${route.earnings.toFixed(2)}
+                        </div>
+                        <div className="text-xs text-emerald-600 font-semibold">
+                          ${route.avgEarning.toFixed(2)}/trip
+                        </div>
                       </div>
                     </div>
-                    <div className="text-right ml-4 flex-shrink-0">
-                      <div className="text-lg font-bold text-gray-900">
-                        ${route.earnings.toFixed(2)}
-                      </div>
-                      <div className="text-xs text-emerald-600 font-semibold">
-                        ${route.avgEarning.toFixed(2)}/trip
-                      </div>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">No routes data available</div>
@@ -526,7 +626,6 @@ const EarningsAnalytics = () => {
         </Card>
       </div>
 
-      {/* Trips Comparison Chart */}
       <Card className="border-0 shadow-sm bg-white mb-6">
         <CardHeader className="pb-3 border-b border-gray-200">
           <CardTitle>Earnings & Trips Comparison</CardTitle>
@@ -581,7 +680,6 @@ const EarningsAnalytics = () => {
         </CardContent>
       </Card>
 
-      {/* Summary Stats */}
       <Card className="border-0 shadow-sm bg-gradient-to-br from-white to-blue-50">
         <CardHeader className="pb-3 border-b border-gray-200">
           <CardTitle>Summary Statistics</CardTitle>

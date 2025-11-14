@@ -36,6 +36,7 @@ import { getStatusColor, getStatusIcon, getStatusText } from "@/utils/status";
 import { RideMap } from "@/components/shared/RideMap";
 import { useActiveRide } from "@/hooks/useActiveRide";
 import { reverseGeocode } from "@/utils/reverseGeocode";
+import { useDriverRatingUpdateMutation } from "@/redux/features/driver/driver.api";
 
 
 export default function ActiveRide() {
@@ -45,6 +46,7 @@ export default function ActiveRide() {
   const { ride, isLoading, error, refetch, isSocketConnected } = useActiveRide();
 
   const [cancelRide, { isLoading: cancelling }] = useCancelRideMutation();
+  const [updateDriverRating, { isLoading: ratingUpdating }] = useDriverRatingUpdateMutation();
 
   const [timeRemaining, setTimeRemaining] = useState<number>(0);
   const [driverSearchTime] = useState<number>(120);
@@ -55,6 +57,9 @@ export default function ActiveRide() {
   const [showCancellationUI, setShowCancellationUI] = useState<RideStatus | null>(null);
   const [showCompletedUI, setShowCompletedUI] = useState(false);
   const [cancellationReason, setCancellationReason] = useState<string>('');
+  const [selectedRating, setSelectedRating] = useState<number>(0);
+  const [hoveredRating, setHoveredRating] = useState<number>(0);
+  const [hasRated, setHasRated] = useState(false);
 
   // State for storing geocoded addresses
   const [addresses, setAddresses] = useState<{
@@ -131,6 +136,9 @@ export default function ActiveRide() {
     if (ride.status === 'COMPLETED') {
       console.log('Ride completed, showing completion UI');
       setShowCompletedUI(true);
+      // Reset rating state when ride completes
+      setSelectedRating(0);
+      setHasRated(false);
     }
   }, [ride, redirecting, isMounted]);
 
@@ -225,6 +233,45 @@ export default function ActiveRide() {
       console.error('Cancellation error:', err);
       if (isMounted) {
         toast.error(err?.data?.message || "Failed to cancel ride");
+      }
+    }
+  };
+
+  const handleRatingSubmit = async (rating: number) => {
+    console.log(ride,isMounted);
+    if (!ride?._id || !ride?.driver || !isMounted) {
+      toast.error("Unable to submit rating");
+      return;
+    }
+
+    try {
+      console.log('Submitting rating:', { 
+        driverId: ride.driver, 
+        rideId: ride._id, 
+        rating 
+      });
+
+      await updateDriverRating({
+        driverId: (ride.driver) as unknown as string,
+        rideId: ride._id,
+        rating
+      }).unwrap();
+
+      if (!isMounted) return;
+
+      setSelectedRating(rating);
+      setHasRated(true);
+      toast.success(`Thank you for rating ${rating} star${rating !== 1 ? 's' : ''}!`);
+
+      // Refetch to get updated ride data
+      setTimeout(() => {
+        refetch();
+      }, 500);
+
+    } catch (err: any) {
+      console.error('Rating submission error:', err);
+      if (isMounted) {
+        toast.error(err?.data?.message || "Failed to submit rating");
       }
     }
   };
@@ -436,7 +483,7 @@ export default function ActiveRide() {
                   </div>
                 </div>
 
-                {/* Driver Info */}
+                {/* Driver Info
                 {ride.driver && (
                   <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-200">
                     <h3 className="font-semibold text-gray-800 mb-3">Your Driver</h3>
@@ -451,37 +498,84 @@ export default function ActiveRide() {
                         <p className="text-sm text-gray-600">License: {ride.driver.licenseNumber}</p>
                         <div className="flex items-center gap-1 mt-1">
                           <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                          <span className="text-sm font-medium">{ride.driver.rating.toFixed(1)}</span>
+                          <span className="text-sm font-medium">{ride?.driver?.rating?.toFixed(1)}</span>
                         </div>
                       </div>
                     </div>
                   </div>
-                )}
+                )} */}
 
                 {/* Rating Section */}
-                {!ride.rating && (
+                {!hasRated && ride.driver && (
                   <div className="bg-blue-50 rounded-lg p-5 mb-6 border border-blue-200">
                     <h3 className="font-semibold text-blue-900 mb-3 flex items-center justify-center gap-2">
                       <Star className="w-5 h-5" />
-                      Rate Your Experience
+                      Rate Your Driver
                     </h3>
                     <p className="text-sm text-blue-700 mb-4">
-                      Help us improve by rating your ride
+                      How was your experience with the driver?
                     </p>
-                    <div className="flex justify-center gap-2 mb-4">
+                    
+                    {ratingUpdating ? (
+                      <div className="flex items-center justify-center gap-2 py-4">
+                        <Loader2 className="w-6 h-6 animate-spin text-blue-600" />
+                        <span className="text-sm text-blue-700">Submitting rating...</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-center gap-2 mb-4">
+                          {[1, 2, 3, 4, 5].map((star) => (
+                            <button
+                              key={star}
+                              className="hover:scale-110 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
+                              onClick={() => handleRatingSubmit(star)}
+                              onMouseEnter={() => setHoveredRating(star)}
+                              onMouseLeave={() => setHoveredRating(0)}
+                              disabled={ratingUpdating}
+                            >
+                              <Star 
+                                className={`w-10 h-10 transition-colors ${
+                                  star <= (hoveredRating || selectedRating)
+                                    ? 'text-yellow-400 fill-yellow-400'
+                                    : 'text-gray-300'
+                                }`}
+                              />
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-gray-500">
+                          {hoveredRating > 0 
+                            ? `${hoveredRating} star${hoveredRating !== 1 ? 's' : ''}`
+                            : 'Click a star to rate'
+                          }
+                        </p>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Rating Success Message */}
+                {hasRated && (
+                  <div className="bg-green-50 rounded-lg p-5 mb-6 border border-green-200">
+                    <div className="flex items-center justify-center gap-2 mb-2">
+                      <CheckCircle className="w-5 h-5 text-green-600" />
+                      <h3 className="font-semibold text-green-900">Thank you for your feedback!</h3>
+                    </div>
+                    <div className="flex justify-center gap-1 mb-2">
                       {[1, 2, 3, 4, 5].map((star) => (
-                        <button
+                        <Star
                           key={star}
-                          className="hover:scale-110 transition-transform"
-                          onClick={() => {
-                            toast.info(`Rated ${star} stars - Feature coming soon!`);
-                          }}
-                        >
-                          <Star className="w-8 h-8 text-gray-300 hover:text-yellow-400 hover:fill-yellow-400 transition-colors" />
-                        </button>
+                          className={`w-6 h-6 ${
+                            star <= selectedRating
+                              ? 'text-yellow-400 fill-yellow-400'
+                              : 'text-gray-300'
+                          }`}
+                        />
                       ))}
                     </div>
-                    <p className="text-xs text-gray-500">Tap a star to rate</p>
+                    <p className="text-sm text-green-700">
+                      You rated this ride {selectedRating} star{selectedRating !== 1 ? 's' : ''}
+                    </p>
                   </div>
                 )}
 
@@ -968,7 +1062,7 @@ export default function ActiveRide() {
 
                       <div className="flex items-center gap-1">
                         <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
-                        <span className="text-sm">{ride.driver.rating.toFixed(1)}</span>
+                        <span className="text-sm">{ride?.driver?.rating?.toFixed(1)}</span>
                       </div>
                     </div>
                   </div>

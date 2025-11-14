@@ -65,8 +65,16 @@ export const driverApi = baseApi.injectEndpoints({
             }),
             providesTags: ["EARNINGS_ANALYTICS"],
         }),
+        driverRatingUpdate: builder.mutation<IResponse<Driver>, {driverId:string, rideId: string; rating: number }>({
+            query: ({driverId, rideId, rating}) => ({
+                url: `/driver/rating/${driverId}`,
+                method: "PATCH",
+                data: { rideId, rating },
+            }),
+            invalidatesTags: ["DRIVER","EARNINGS_ANALYTICS", "DASHBOARD_METRICS"],
+        }),
 
     }),
 });
 
-export const { useCreateDriverMutation, useGetDriverProfileQuery, useUpdateDriverStatusMutation, useUpdateDriverLocationMutation,useGetDashboardMetricsQuery,useGetEarningsAnalyticsQuery,useGetPeakEarningHoursQuery,useGetTopRoutesQuery } = driverApi;
+export const { useCreateDriverMutation, useGetDriverProfileQuery, useUpdateDriverStatusMutation, useUpdateDriverLocationMutation,useGetDashboardMetricsQuery,useGetEarningsAnalyticsQuery,useGetPeakEarningHoursQuery,useGetTopRoutesQuery,useDriverRatingUpdateMutation } = driverApi;

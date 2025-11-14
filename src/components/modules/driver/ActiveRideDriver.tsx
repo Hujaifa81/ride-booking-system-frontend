@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useDispatch, useSelector } from "react-redux";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import {
   MapPin,
   DollarSign,
@@ -47,6 +47,7 @@ import { initSocket } from "@/lib/socket";
 import { MapContainer, Marker, Popup, TileLayer } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { reverseGeocode } from "@/utils/reverseGeocode";
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -125,7 +126,7 @@ const ActiveRideDriver = () => {
   const reduxActiveRide = useSelector((state: any) => state?.activeRide?.ride || null);
 
   // ✅ Use API data as primary, fallback to Redux
-  const activeRide = activeRideData?.data
+  const activeRide = activeRideData?.data;
 
   // ✅ Mutations
   const [statusUpdateAfterAccepted, { isLoading: isStatusChanging }] =
@@ -136,6 +137,98 @@ const ActiveRideDriver = () => {
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
   const [expandedSection, setExpandedSection] = useState<"route" | "passenger" | "map" | null>("route");
+  const [addressCache, setAddressCache] = useState<Record<string, string>>({});
+  const isFetchingRef = useRef(false);
+
+  // ✅ Reverse Geocoding utilities
+  const FAILED = "Unable to fetch address";
+
+  const getCoords = (location: any): [number, number] | undefined => {
+    if (location?.coordinates) {
+      if (Array.isArray(location.coordinates) && location.coordinates.length === 2) {
+        return [location.coordinates[0], location.coordinates[1]];
+      }
+    }
+    return undefined;
+  };
+
+  const coordKey = (lng: number, lat: number) => `${lng},${lat}`;
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+  const formattedRide = useMemo(() => {
+    if (!activeRide) return null;
+    
+    return {
+      ...activeRide,
+      pickupCoords: getCoords(activeRide.pickupLocation),
+      dropoffCoords: getCoords(activeRide.dropOffLocation),
+    };
+  }, [activeRide]);
+
+  // ✅ Fetch missing addresses
+  useEffect(() => {
+    if (!formattedRide || isFetchingRef.current) return;
+
+    const keys = new Map<string, { lng: number; lat: number }>();
+
+    if (formattedRide.pickupCoords && !formattedRide.pickupAddress) {
+      const [lng, lat] = formattedRide.pickupCoords;
+      const key = coordKey(lng, lat);
+      if (!(key in addressCache)) {
+        keys.set(key, { lng, lat });
+      }
+    }
+    if (formattedRide.dropoffCoords && !formattedRide.dropOffAddress) {
+      const [lng, lat] = formattedRide.dropoffCoords;
+      const key = coordKey(lng, lat);
+      if (!(key in addressCache)) {
+        keys.set(key, { lng, lat });
+      }
+    }
+
+    if (keys.size === 0) return;
+
+    isFetchingRef.current = true;
+
+    (async () => {
+      for (const [key, { lng, lat }] of keys) {
+        try {
+          console.log(`🗺️ [GEOCODE] Fetching address for: lat=${lat}, lng=${lng}`);
+          const name = await reverseGeocode(lat, lng);
+          console.log(`🗺️ [GEOCODE] Received address: ${name}`);
+          
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: name || FAILED };
+          });
+        } catch (error) {
+          console.error(`🗺️ [GEOCODE] Error fetching address for lat=${lat}, lng=${lng}:`, error);
+          setAddressCache((prev) => {
+            if (key in prev) return prev;
+            return { ...prev, [key]: FAILED };
+          });
+        }
+        await sleep(1100); // Rate limiting
+      }
+      isFetchingRef.current = false;
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formattedRide]);
+
+  const resolveAddress = useCallback(
+    (
+      savedAddress: string | undefined,
+      coords: [number, number] | undefined
+    ): string => {
+      if (savedAddress) return savedAddress;
+      if (!coords) return "Unknown location";
+      const name = addressCache[coordKey(coords[0], coords[1])];
+      if (!name) return "Loading address...";
+      if (name === FAILED) return formatCoords(coords);
+      return name;
+    },
+    [addressCache]
+  );
 
   // ✅ SYNC REDUX WITH API - CRITICAL FIX
   useEffect(() => {
@@ -205,7 +298,6 @@ const ActiveRideDriver = () => {
             console.warn("🟪 [STATUS] ⚠️ API still has ride data:", refetchResult.data?.data);
           }
 
-  
           toast.success("Ride completed! ✅");
         } else {
           console.log("🔄 [STATUS] Status updated to:", nextStatus);
@@ -227,8 +319,6 @@ const ActiveRideDriver = () => {
     },
     [statusUpdateAfterAccepted, dispatch, refetch]
   );
-
-
 
   // ✅ Cancel ride
   const handleCancelRide = useCallback(async () => {
@@ -294,12 +384,12 @@ const ActiveRideDriver = () => {
     );
   }
 
-  const pickup =
-    activeRide.pickupAddress ||
-    (activeRide.pickupLocation?.coordinates ? formatCoords(activeRide.pickupLocation.coordinates) : "Pickup");
-  const dropoff =
-    activeRide.dropOffAddress ||
-    (activeRide.dropOffLocation?.coordinates ? formatCoords(activeRide.dropOffLocation.coordinates) : "Dropoff");
+  const pickup = formattedRide 
+    ? resolveAddress(formattedRide.pickupAddress, formattedRide.pickupCoords)
+    : "Pickup";
+  const dropoff = formattedRide
+    ? resolveAddress(formattedRide.dropOffAddress, formattedRide.dropoffCoords)
+    : "Dropoff";
 
   const mapKey = `map-${activeRide._id}`;
   const leafletCenter = toLeaflet(activeRide.pickupLocation?.coordinates) || dhakaCenter;
