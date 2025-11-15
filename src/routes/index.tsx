@@ -10,6 +10,7 @@ import { createBrowserRouter, Navigate } from "react-router";
 import { riderSidebarItems } from "./riderSidebarItems";
 import { generateRoutes } from "@/utils/generateRoutes";
 import { driverSidebarItems } from "./driverSidebarItems";
+import { adminSidebarItems } from "./adminSidebarItems";
 
 
 export const router = createBrowserRouter([
@@ -37,6 +38,14 @@ export const router = createBrowserRouter([
         children: [
             { index: true, element: <Navigate to="/driver/dashboard" /> },
             ...generateRoutes(driverSidebarItems),
+        ],
+    },
+    {
+        Component: withAuth(DashboardLayout, role.admin as TRole),
+        path: "/admin",
+        children: [
+            { index: true, element: <Navigate to="/admin/dashboard" /> },
+            ...generateRoutes(adminSidebarItems),
         ],
     },
     {
