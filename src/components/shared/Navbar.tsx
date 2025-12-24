@@ -68,7 +68,7 @@ const navigationLinks = [
 ];
 
 export default function Navbar() {
-  const { data } = useUserInfoQuery(undefined);
+  const { data, refetch } = useUserInfoQuery(undefined);
   const [logout] = useLogoutMutation();
   const dispatch = useAppDispatch();
 
@@ -76,6 +76,9 @@ export default function Navbar() {
   const [mobileProfileOpen, setMobileProfileOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
+  useEffect(() => {
+    refetch();
+  }, [refetch]);
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 10);
@@ -91,11 +94,10 @@ export default function Navbar() {
 
   return (
     <section
-      className={`py-4 border-b px-6 md:px-12 sticky top-0 z-50 transition-all duration-300 ${
-        isScrolled
+      className={`py-4 border-b px-6 md:px-12 sticky top-0 z-50 transition-all duration-300 ${isScrolled
           ? "bg-background/60 dark:bg-background/40 backdrop-blur-xl shadow-md"
           : "bg-transparent"
-      }`}
+        }`}
     >
       <div className="container">
         <nav className="flex items-center justify-between">
@@ -185,11 +187,10 @@ export default function Navbar() {
                       {data?.data?.name?.charAt(0) || "U"}
                     </AvatarFallback>
                   </Avatar>
-                 
+
                   <ChevronDown
-                    className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
-                      desktopMenuOpen ? "rotate-180" : ""
-                    }`}
+                    className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${desktopMenuOpen ? "rotate-180" : ""
+                      }`}
                   />
                 </button>
 
@@ -273,9 +274,8 @@ export default function Navbar() {
                           {data?.data?.name}
                         </span>
                         <ChevronDown
-                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${
-                            mobileProfileOpen ? "rotate-180" : ""
-                          }`}
+                          className={`h-4 w-4 text-muted-foreground transition-transform duration-200 ${mobileProfileOpen ? "rotate-180" : ""
+                            }`}
                         />
                       </button>
 

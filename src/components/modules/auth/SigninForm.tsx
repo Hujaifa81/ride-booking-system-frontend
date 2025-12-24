@@ -106,7 +106,7 @@ const navigate=useNavigate()
 
           <CardContent className="relative z-10">
             <div className="grid gap-6">
-              {/* Social login */}
+              {/* Social login
               <div className="flex flex-col gap-3">
                 <Button
                   variant="outline"
@@ -115,7 +115,7 @@ const navigate=useNavigate()
                   <Mail className="h-5 w-5" />
                   Continue with Google
                 </Button>
-              </div>
+              </div> */}
 
               {/* Divider */}
               <div className="relative text-center text-sm">

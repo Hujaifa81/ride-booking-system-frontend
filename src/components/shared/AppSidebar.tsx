@@ -3,7 +3,7 @@ import { Sidebar, SidebarContent, SidebarGroup, SidebarGroupLabel, SidebarGroupC
 import { Link, useLocation, useNavigate } from "react-router";
 import { cn } from "@/lib/utils";
 import { getSidebarItems } from "@/utils/getSidebarItems";
-import { useUserInfoQuery, useLogoutMutation } from "@/redux/features/auth/auth.api";
+import { useUserInfoQuery, useLogoutMutation, authApi } from "@/redux/features/auth/auth.api";
 import { Button } from "@/components/ui/button";
 import { LogOut, Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -18,18 +18,21 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { useDispatch } from "react-redux";
 
 export function AppSidebar() {
   const navigate = useNavigate();
   const { data: userData } = useUserInfoQuery(undefined);
   const [logout, { isLoading: isLoggingOut }] = useLogoutMutation();
   const sidebarSections = getSidebarItems(userData?.data?.role);
+  const dispatch=useDispatch()
 
   const location = useLocation();
 
   const handleLogout = async () => {
     try {
       await logout(undefined).unwrap();
+      await dispatch(authApi.util.resetApiState());
       toast.success("Logged out successfully");
       navigate("/sign-in", { replace: true });
     } catch (error: any) {

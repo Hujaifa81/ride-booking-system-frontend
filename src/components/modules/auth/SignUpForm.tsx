@@ -120,7 +120,7 @@ export default function SignUpForm({
 
           <CardContent className="relative z-10">
             {/* Social signups */}
-            <div className="flex flex-col gap-3 mb-6">
+            {/* <div className="flex flex-col gap-3 mb-6">
               <Button
                 variant="outline"
                 className="w-full flex items-center gap-2 bg-white text-black hover:bg-gray-100 rounded-lg"
@@ -128,7 +128,7 @@ export default function SignUpForm({
                 <Mail /> Sign up with Google
               </Button>
 
-            </div>
+            </div> */}
 
             {/* Divider */}
             <div className="relative text-center my-6">
