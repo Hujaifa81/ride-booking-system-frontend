@@ -1,6 +1,22 @@
 # 🚗 Ride Booking Frontend
 
-[🌐 Live Application](https://ride-booking-frontend-eta.vercel.app) | [📡 Backend API](https://ride-booking-system-backend-production.up.railway.app)
+[🖥️ Live Frontend](https://ride-booking-frontend-eta.vercel.app) | [🌐 Live API](https://ride-booking-system-backend.onrender.com) 
+
+## 🔑 Test Credentials
+
+Use these credentials to test the API with different user roles:
+
+**👤 Rider Account:**
+- Email: `h@gmail.com`
+- Password: `123456@aA`
+
+**🚗 Driver Account:**
+- Email: `abuhojaifa@gmail.com`
+- Password: `1234567@aA`
+
+**🔴 Admin Account:**
+- Email: `admin@gmail.com`
+- Password: `Admin@123`
 
 ## 📋 Table of Contents
 - [Project Overview](#-project-overview)
